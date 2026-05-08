@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background">#1C1B1F</color>
+    <color name="ryou_primary">#6750A4</color>
+    <color name="ryou_primary_dark">#D0BCFF</color>
+    <color name="ryou_secondary">#625B71</color>
+    <color name="ryou_accent">#7C4DFF</color>
+    <color name="ryou_surface_dark">#1C1B1F</color>
+    <color name="ryou_background">#FFFBFE</color>
+    <color name="ryou_player_bg">#000000</color>
+</resources>

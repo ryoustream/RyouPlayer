@@ -1,0 +1,50 @@
+# ── Build outputs ─────────────────────────────────────────────────────────────
+/build
+/app/build
+**/build/
+*.apk
+*.aab
+*.ap_
+
+# ── Gradle ────────────────────────────────────────────────────────────────────
+.gradle/
+local.properties
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# ── Android Studio ────────────────────────────────────────────────────────────
+*.iml
+.idea/
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+*.orig
+
+# ── Signing — NEVER commit these ─────────────────────────────────────────────
+signing.properties
+keystore/
+*.keystore
+*.jks
+
+# ── ProGuard mappings ─────────────────────────────────────────────────────────
+app/src/main/assets/dexopt/
+app/build/outputs/mapping/
+
+# ── Room schema (optional: commit for migration tracking) ─────────────────────
+# app/schemas/
+
+# ── OS generated ──────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ── Kotlin ────────────────────────────────────────────────────────────────────
+*.kotlin_module
+
+# ── Node (if any tooling) ─────────────────────────────────────────────────────
+node_modules/

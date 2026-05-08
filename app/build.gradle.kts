@@ -1,0 +1,254 @@
+import java.io.FileInputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Properties
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.kotlin.parcelize)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+// ─── Version Helpers ──────────────────────────────────────────────────────────
+val buildDate: String = SimpleDateFormat("yyyyMMdd").format(Date())
+val buildTime: String = SimpleDateFormat("HHmm").format(Date())
+val versionMajor = 1
+val versionMinor = 0
+val versionPatch = 0
+
+// Auto-increment from BUILD_NUMBER env (GitHub Actions) or fallback to 1
+val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "1").toIntOrNull() ?: 1
+val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
+
+val calculatedVersionCode: Int = versionMajor * 10000 + versionMinor * 100 + buildNumber
+val calculatedVersionName: String = "v$versionMajor.$versionMinor.$versionPatch.$buildDate-build$buildNumber"
+
+// ─── Signing Config ───────────────────────────────────────────────────────────
+val signingPropertiesFile = rootProject.file("signing.properties")
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+
+fun loadSigningProps(): Properties? {
+    val file = when {
+        signingPropertiesFile.exists() -> signingPropertiesFile
+        keystorePropertiesFile.exists() -> keystorePropertiesFile
+        else -> null
+    } ?: return null
+    return Properties().also { it.load(FileInputStream(file)) }
+}
+
+val signingProps = loadSigningProps()
+
+android {
+    namespace = "com.ryoustream.player"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.ryoustream.player"
+        minSdk = 31
+        targetSdk = 35
+        versionCode = calculatedVersionCode
+        versionName = calculatedVersionName
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
+
+        // Inject build info into BuildConfig
+        buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
+        buildConfigField("String", "COMMIT_HASH", "\"$commitHash\"")
+        buildConfigField("int", "BUILD_NUMBER", "$buildNumber")
+        buildConfigField("String", "VERSION_FULL", "\"$calculatedVersionName\"")
+
+        // Room schema export
+        ksp {
+            arg("room.schemaLocation", "$projectDir/schemas")
+            arg("room.incremental", "true")
+        }
+    }
+
+    // ─── Signing ──────────────────────────────────────────────────────────────
+    signingConfigs {
+        create("release") {
+            if (signingProps != null) {
+                // From signing.properties file
+                storeFile = file(signingProps.getProperty("storeFile", "keystore/release.keystore"))
+                storePassword = signingProps.getProperty("storePassword", "")
+                keyAlias = signingProps.getProperty("keyAlias", "ryoustream")
+                keyPassword = signingProps.getProperty("keyPassword", "")
+            } else {
+                // From environment variables (GitHub Actions / CI)
+                val keystoreB64 = System.getenv("KEYSTORE_BASE64")
+                if (keystoreB64 != null) {
+                    val keystoreFile = file("${buildDir}/keystore/release.keystore")
+                    keystoreFile.parentFile.mkdirs()
+                    keystoreFile.writeBytes(android.util.Base64.decode(keystoreB64, android.util.Base64.DEFAULT))
+                    storeFile = keystoreFile
+                }
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("KEY_ALIAS") ?: "ryoustream"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            isDebuggable = true
+            isMinifyEnabled = false
+            isShrinkResources = false
+            buildConfigField("Boolean", "IS_DEBUG_BUILD", "true")
+        }
+        release {
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("release")
+            buildConfigField("Boolean", "IS_DEBUG_BUILD", "false")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += listOf(
+            "-opt-in=kotlin.RequiresOptIn",
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
+            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+            "-opt-in=kotlinx.coroutines.FlowPreview",
+        )
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/DEPENDENCIES"
+        }
+    }
+
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
+    lint {
+        abortOnError = false
+        warningsAsErrors = false
+        checkReleaseBuilds = false
+    }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+dependencies {
+    // Core desugaring
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // AndroidX Core
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.splashscreen)
+
+    // Compose BOM
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
+    implementation(libs.compose.animation)
+    implementation(libs.compose.foundation)
+    implementation(libs.activity.compose)
+    implementation(libs.navigation.compose)
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
+
+    // Lifecycle
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.service)
+
+    // Hilt Dependency Injection
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+
+    // Media3 ExoPlayer
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
+    implementation(libs.media3.exoplayer.dash)
+    implementation(libs.media3.exoplayer.rtsp)
+    implementation(libs.media3.ui)
+    implementation(libs.media3.session)
+    implementation(libs.media3.common)
+    implementation(libs.media3.datasource)
+    implementation(libs.media3.datasource.okhttp)
+
+    // Coroutines
+    implementation(libs.coroutines.core)
+    implementation(libs.coroutines.android)
+
+    // Room
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+
+    // DataStore
+    implementation(libs.datastore.preferences)
+
+    // Network
+    implementation(libs.retrofit.core)
+    implementation(libs.retrofit.gson)
+    implementation(libs.okhttp.core)
+    implementation(libs.okhttp.logging)
+    implementation(libs.gson)
+
+    // Coil
+    implementation(libs.coil.compose)
+    implementation(libs.coil.video)
+
+    // Accompanist
+    implementation(libs.accompanist.systemuicontroller)
+    implementation(libs.accompanist.permissions)
+
+    // Cast
+    implementation(libs.google.cast)
+
+    // Testing
+    testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.turbine)
+    androidTestImplementation(libs.junit.ext)
+    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+}

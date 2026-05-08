@@ -1,0 +1,25 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# signing.properties.template
+#
+# Copy this file to signing.properties for local builds.
+# NEVER commit signing.properties to version control!
+#
+# For GitHub Actions, use GitHub Secrets instead:
+#   KEYSTORE_BASE64  - base64 encoded keystore file
+#   KEYSTORE_PASSWORD - keystore password
+#   KEY_ALIAS        - key alias (default: ryoustream)
+#   KEY_PASSWORD     - key password
+#
+# To generate a keystore:
+#   keytool -genkey -v -keystore release.keystore \
+#     -alias ryoustream -keyalg RSA -keysize 2048 -validity 10000
+#
+# To encode for GitHub Secret:
+#   base64 -i release.keystore | pbcopy   (macOS)
+#   base64 release.keystore               (Linux)
+# ──────────────────────────────────────────────────────────────────────────────
+
+storeFile=keystore/release.keystore
+storePassword=defaultryoustream
+keyAlias=ryoustream
+keyPassword=defaultryoustream

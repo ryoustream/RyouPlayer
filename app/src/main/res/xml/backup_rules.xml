@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Exclude sensitive data from backup -->
+    <exclude domain="sharedpref" path="ryou_settings.xml" />
+    <exclude domain="database" path="ryou_player.db" />
+    <exclude domain="file" path="keystore/" />
+</full-backup-content>
