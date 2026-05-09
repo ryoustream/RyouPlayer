@@ -19,8 +19,7 @@ on:
 
 env:
   JAVA_VERSION: '17'
-  GRADLE_VERSION: '8.11.1'
-  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
+  GRADLE_TARGET: '8.11.1'
 
 permissions:
   contents: write
@@ -63,34 +62,26 @@ jobs:
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
-      - name: 🔧 Setup Gradle ${{ env.GRADLE_VERSION }}
+      - name: 🔧 Generate Gradle Wrapper (using system Gradle)
         run: |
-          # Download Gradle distribution
-          GRADLE_ZIP="gradle-${GRADLE_VERSION}-bin.zip"
-          GRADLE_URL="https://services.gradle.org/distributions/${GRADLE_ZIP}"
-          echo "Downloading Gradle ${GRADLE_VERSION}..."
-          curl -fsSL "$GRADLE_URL" -o "/tmp/${GRADLE_ZIP}"
+          # The runner has a pre-installed system Gradle (9.x).
+          # Use it to GENERATE a proper wrapper targeting our required version.
+          # 'gradle wrapper' creates gradle-wrapper.jar + gradlew with correct bootstrapper.
+          echo "System Gradle version:"
+          gradle --version | grep "^Gradle"
 
-          # Extract
-          unzip -q "/tmp/${GRADLE_ZIP}" -d /tmp/gradle_dist
-          GRADLE_HOME="/tmp/gradle_dist/gradle-${GRADLE_VERSION}"
-          echo "GRADLE_HOME=${GRADLE_HOME}" >> $GITHUB_ENV
-          echo "${GRADLE_HOME}/bin" >> $GITHUB_PATH
+          echo "Generating wrapper for Gradle ${GRADLE_TARGET}..."
+          gradle wrapper \
+            --gradle-version "${GRADLE_TARGET}" \
+            --distribution-type bin
 
-          # Copy the correct wrapper jar from distribution
-          cp "${GRADLE_HOME}/lib/gradle-wrapper-${GRADLE_VERSION}.jar" \
-             gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
-          cp "${GRADLE_HOME}/lib/plugins/gradle-wrapper-${GRADLE_VERSION}.jar" \
-             gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
-          find "${GRADLE_HOME}" -name "*wrapper*.jar" | head -1 | \
-             xargs -I{} cp {} gradle/wrapper/gradle-wrapper.jar
+          chmod +x gradlew
 
-          echo "✅ Gradle ${GRADLE_VERSION} ready"
-          gradle --version
-          ls -lh gradle/wrapper/gradle-wrapper.jar
-
-      - name: 🔧 Make gradlew executable
-        run: chmod +x gradlew
+          echo "✅ Wrapper generated:"
+          ls -lh gradle/wrapper/
+          echo "Verifying GradleWrapperMain is present:"
+          jar tf gradle/wrapper/gradle-wrapper.jar | grep -i "WrapperMain" || echo "(no direct match, checking all classes)"
+          jar tf gradle/wrapper/gradle-wrapper.jar | head -20
 
       - name: 🐘 Cache Gradle dependencies
         uses: actions/cache@v4
@@ -98,30 +89,39 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
+          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION }}-
+            ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-
             ${{ runner.os }}-gradle-
 
       - name: 🏗️ Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
+        run: |
+          ./gradlew assembleDebug \
+            --stacktrace \
+            --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError" \
+            -Dorg.gradle.parallel=true
         env:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
           COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
 
       - name: 🔍 Run Lint (non-blocking)
-        run: ./gradlew lintDebug --continue || true
+        run: |
+          ./gradlew lintDebug \
+            --no-daemon \
+            --continue \
+            -Dorg.gradle.jvmargs="-Xmx4g" || true
         env:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
           COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
 
       - name: 📝 Rename APK
         run: |
-          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
-          echo "Found: $APK_PATH"
-          NEW_NAME="RyouPlayer-debug-${{ steps.meta.outputs.VERSION_NAME }}.apk"
-          cp "$APK_PATH" "app/build/outputs/apk/debug/${NEW_NAME}"
-          echo "✅ Debug APK: ${NEW_NAME}"
+          APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          echo "Found APK: $APK"
+          NEW="RyouPlayer-debug-${{ steps.meta.outputs.VERSION_NAME }}.apk"
+          cp "$APK" "app/build/outputs/apk/debug/${NEW}"
+          echo "✅ Renamed to: ${NEW}"
 
       - name: 📤 Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -175,31 +175,19 @@ jobs:
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
-      - name: 🔧 Setup Gradle ${{ env.GRADLE_VERSION }}
+      - name: 🔧 Generate Gradle Wrapper (using system Gradle)
         run: |
-          GRADLE_ZIP="gradle-${GRADLE_VERSION}-bin.zip"
-          GRADLE_URL="https://services.gradle.org/distributions/${GRADLE_ZIP}"
-          echo "Downloading Gradle ${GRADLE_VERSION}..."
-          curl -fsSL "$GRADLE_URL" -o "/tmp/${GRADLE_ZIP}"
+          echo "System Gradle version:"
+          gradle --version | grep "^Gradle"
 
-          unzip -q "/tmp/${GRADLE_ZIP}" -d /tmp/gradle_dist
-          GRADLE_HOME="/tmp/gradle_dist/gradle-${GRADLE_VERSION}"
-          echo "GRADLE_HOME=${GRADLE_HOME}" >> $GITHUB_ENV
-          echo "${GRADLE_HOME}/bin" >> $GITHUB_PATH
+          echo "Generating wrapper for Gradle ${GRADLE_TARGET}..."
+          gradle wrapper \
+            --gradle-version "${GRADLE_TARGET}" \
+            --distribution-type bin
 
-          cp "${GRADLE_HOME}/lib/gradle-wrapper-${GRADLE_VERSION}.jar" \
-             gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
-          cp "${GRADLE_HOME}/lib/plugins/gradle-wrapper-${GRADLE_VERSION}.jar" \
-             gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
-          find "${GRADLE_HOME}" -name "*wrapper*.jar" | head -1 | \
-             xargs -I{} cp {} gradle/wrapper/gradle-wrapper.jar
-
-          echo "✅ Gradle ${GRADLE_VERSION} ready"
-          gradle --version
-          ls -lh gradle/wrapper/gradle-wrapper.jar
-
-      - name: 🔧 Make gradlew executable
-        run: chmod +x gradlew
+          chmod +x gradlew
+          echo "✅ Wrapper ready"
+          ls -lh gradle/wrapper/
 
       - name: 🐘 Cache Gradle dependencies
         uses: actions/cache@v4
@@ -207,9 +195,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
+          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION }}-
+            ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-
             ${{ runner.os }}-gradle-
 
       - name: 🔑 Decode Keystore
@@ -219,7 +207,8 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             mkdir -p app/keystore
             echo "$KEYSTORE_BASE64" | base64 --decode > app/keystore/release.keystore
-            echo "✅ Keystore decoded ($(stat -c%s app/keystore/release.keystore) bytes)"
+            SIZE=$(stat -c%s app/keystore/release.keystore)
+            echo "✅ Keystore decoded: ${SIZE} bytes"
           else
             echo "⚠️ KEYSTORE_BASE64 not set — APK will be unsigned"
           fi
@@ -239,11 +228,16 @@ jobs:
           EOF
             echo "✅ signing.properties created"
           else
-            echo "⚠️ Signing secrets not set"
+            echo "⚠️ Signing secrets not configured"
           fi
 
       - name: 🏗️ Build Release APK
-        run: ./gradlew assembleRelease --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
+        run: |
+          ./gradlew assembleRelease \
+            --stacktrace \
+            --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError" \
+            -Dorg.gradle.parallel=true
         env:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
           COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
@@ -254,10 +248,10 @@ jobs:
 
       - name: 📝 Rename APK
         run: |
-          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
-          NEW_NAME="RyouPlayer-release-${{ steps.meta.outputs.VERSION_NAME }}.apk"
-          cp "$APK_PATH" "app/build/outputs/apk/release/${NEW_NAME}"
-          echo "✅ Release APK: ${NEW_NAME}"
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          NEW="RyouPlayer-release-${{ steps.meta.outputs.VERSION_NAME }}.apk"
+          cp "$APK" "app/build/outputs/apk/release/${NEW}"
+          echo "✅ Renamed to: ${NEW}"
 
       - name: 📤 Upload Release APK
         uses: actions/upload-artifact@v4
