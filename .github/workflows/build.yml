@@ -19,9 +19,9 @@ on:
 
 env:
   JAVA_VERSION: '17'
-  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.jvmargs=-Xmx4g'
+  GRADLE_VERSION: '8.11.1'
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
 
-# Required permissions for creating releases
 permissions:
   contents: write
   packages: read
@@ -49,7 +49,6 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
-          cache: 'gradle'
 
       - name: 📋 Set build metadata
         id: meta
@@ -64,6 +63,32 @@ jobs:
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
+      - name: 🔧 Setup Gradle ${{ env.GRADLE_VERSION }}
+        run: |
+          # Download Gradle distribution
+          GRADLE_ZIP="gradle-${GRADLE_VERSION}-bin.zip"
+          GRADLE_URL="https://services.gradle.org/distributions/${GRADLE_ZIP}"
+          echo "Downloading Gradle ${GRADLE_VERSION}..."
+          curl -fsSL "$GRADLE_URL" -o "/tmp/${GRADLE_ZIP}"
+
+          # Extract
+          unzip -q "/tmp/${GRADLE_ZIP}" -d /tmp/gradle_dist
+          GRADLE_HOME="/tmp/gradle_dist/gradle-${GRADLE_VERSION}"
+          echo "GRADLE_HOME=${GRADLE_HOME}" >> $GITHUB_ENV
+          echo "${GRADLE_HOME}/bin" >> $GITHUB_PATH
+
+          # Copy the correct wrapper jar from distribution
+          cp "${GRADLE_HOME}/lib/gradle-wrapper-${GRADLE_VERSION}.jar" \
+             gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
+          cp "${GRADLE_HOME}/lib/plugins/gradle-wrapper-${GRADLE_VERSION}.jar" \
+             gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
+          find "${GRADLE_HOME}" -name "*wrapper*.jar" | head -1 | \
+             xargs -I{} cp {} gradle/wrapper/gradle-wrapper.jar
+
+          echo "✅ Gradle ${GRADLE_VERSION} ready"
+          gradle --version
+          ls -lh gradle/wrapper/gradle-wrapper.jar
+
       - name: 🔧 Make gradlew executable
         run: chmod +x gradlew
 
@@ -73,13 +98,13 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            .gradle
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          key: ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
           restore-keys: |
+            ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION }}-
             ${{ runner.os }}-gradle-
 
       - name: 🏗️ Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
         env:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
           COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
@@ -93,6 +118,7 @@ jobs:
       - name: 📝 Rename APK
         run: |
           APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          echo "Found: $APK_PATH"
           NEW_NAME="RyouPlayer-debug-${{ steps.meta.outputs.VERSION_NAME }}.apk"
           cp "$APK_PATH" "app/build/outputs/apk/debug/${NEW_NAME}"
           echo "✅ Debug APK: ${NEW_NAME}"
@@ -135,7 +161,6 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
-          cache: 'gradle'
 
       - name: 📋 Set build metadata
         id: meta
@@ -150,6 +175,29 @@ jobs:
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
+      - name: 🔧 Setup Gradle ${{ env.GRADLE_VERSION }}
+        run: |
+          GRADLE_ZIP="gradle-${GRADLE_VERSION}-bin.zip"
+          GRADLE_URL="https://services.gradle.org/distributions/${GRADLE_ZIP}"
+          echo "Downloading Gradle ${GRADLE_VERSION}..."
+          curl -fsSL "$GRADLE_URL" -o "/tmp/${GRADLE_ZIP}"
+
+          unzip -q "/tmp/${GRADLE_ZIP}" -d /tmp/gradle_dist
+          GRADLE_HOME="/tmp/gradle_dist/gradle-${GRADLE_VERSION}"
+          echo "GRADLE_HOME=${GRADLE_HOME}" >> $GITHUB_ENV
+          echo "${GRADLE_HOME}/bin" >> $GITHUB_PATH
+
+          cp "${GRADLE_HOME}/lib/gradle-wrapper-${GRADLE_VERSION}.jar" \
+             gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
+          cp "${GRADLE_HOME}/lib/plugins/gradle-wrapper-${GRADLE_VERSION}.jar" \
+             gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
+          find "${GRADLE_HOME}" -name "*wrapper*.jar" | head -1 | \
+             xargs -I{} cp {} gradle/wrapper/gradle-wrapper.jar
+
+          echo "✅ Gradle ${GRADLE_VERSION} ready"
+          gradle --version
+          ls -lh gradle/wrapper/gradle-wrapper.jar
+
       - name: 🔧 Make gradlew executable
         run: chmod +x gradlew
 
@@ -159,9 +207,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            .gradle
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          key: ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
           restore-keys: |
+            ${{ runner.os }}-gradle-${{ env.GRADLE_VERSION }}-
             ${{ runner.os }}-gradle-
 
       - name: 🔑 Decode Keystore
@@ -171,9 +219,9 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             mkdir -p app/keystore
             echo "$KEYSTORE_BASE64" | base64 --decode > app/keystore/release.keystore
-            echo "✅ Keystore decoded"
+            echo "✅ Keystore decoded ($(stat -c%s app/keystore/release.keystore) bytes)"
           else
-            echo "⚠️ KEYSTORE_BASE64 not set — release APK will be unsigned"
+            echo "⚠️ KEYSTORE_BASE64 not set — APK will be unsigned"
           fi
 
       - name: 📝 Create signing.properties
@@ -191,11 +239,11 @@ jobs:
           EOF
             echo "✅ signing.properties created"
           else
-            echo "⚠️ Signing secrets not configured"
+            echo "⚠️ Signing secrets not set"
           fi
 
       - name: 🏗️ Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
         env:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
           COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
@@ -238,9 +286,6 @@ jobs:
             ### 📱 Requirements
             - Android 12+ (API 31)
             - ARM64 / x86_64
-
-            ### 📦 Downloads
-            Download `RyouPlayer-release-*.apk` from the assets below.
 
             ---
             > 🤖 Auto-generated by GitHub Actions
