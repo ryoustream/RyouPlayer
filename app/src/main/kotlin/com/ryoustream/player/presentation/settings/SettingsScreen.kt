@@ -196,7 +196,7 @@ fun SettingsScreen(
             }
             item {
                 SwitchSetting(
-                    icon = Icons.Default.PictureInPicture,
+                    icon = Icons.Default.PictureInPictureAlt,
                     title = "Picture-in-Picture",
                     subtitle = "Float player when leaving the app",
                     checked = s.pipEnabled,
@@ -278,7 +278,7 @@ fun SettingsScreen(
             }
             item {
                 SwitchSetting(
-                    icon = Icons.Default.Animation,
+                    icon = Icons.Default.Bolt,
                     title = "Animations",
                     subtitle = "Enable UI transition animations",
                     checked = s.animationsEnabled,
@@ -299,7 +299,7 @@ fun SettingsScreen(
             }
             item {
                 ClickableSetting(
-                    icon = Icons.Default.RestartAlt,
+                    icon = Icons.Default.Refresh,
                     title = "Reset to Defaults",
                     subtitle = "Restore all settings",
                     onClick = { showResetDialog = true },

@@ -30,10 +30,6 @@ class MediaRepositoryImpl @Inject constructor(
 
     override fun getAllVideos(sortOrder: MediaSortOrder): Flow<List<MediaItem>> = flow {
         val videos = mediaStoreDataSource.getAllVideos(sortOrder)
-        val states = buildMap {
-            // Load all playback states in one shot
-        }
-        // Merge with playback states (favorites, positions, etc.)
         val enriched = videos.map { item ->
             val state = mediaPlaybackStateDao.getById(item.id)
             item.copy(
