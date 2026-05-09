@@ -1,5 +1,6 @@
 import java.io.FileInputStream
 import java.text.SimpleDateFormat
+import java.util.Base64
 import java.util.Date
 import java.util.Properties
 
@@ -84,7 +85,7 @@ android {
                 // From environment variables (GitHub Actions)
                 val keystoreB64 = System.getenv("KEYSTORE_BASE64")
                 if (!keystoreB64.isNullOrEmpty()) {
-                    val keystoreBytes = java.util.Base64.getDecoder().decode(keystoreB64)
+                    val keystoreBytes = Base64.getDecoder().decode(keystoreB64)
                     val keystoreFile = file("${layout.buildDirectory.get()}/keystore/release.keystore")
                     keystoreFile.parentFile.mkdirs()
                     keystoreFile.writeBytes(keystoreBytes)
@@ -125,16 +126,18 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-opt-in=kotlin.RequiresOptIn",
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
-            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
-            "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
-            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-opt-in=kotlinx.coroutines.FlowPreview",
-        )
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            freeCompilerArgs.addAll(
+                "-opt-in=kotlin.RequiresOptIn",
+                "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+                "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+                "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
+                "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+                "-opt-in=kotlinx.coroutines.FlowPreview",
+            )
+        }
     }
 
     buildFeatures {
