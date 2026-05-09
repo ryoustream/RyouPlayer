@@ -28,18 +28,6 @@ APP_HOME="${APP_HOME:-./}"
 DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
 CLASSPATH="$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
 
-set_java_home() {
-    if [ -n "$JAVA_HOME" ]; then
-        JAVACMD="$JAVA_HOME/bin/java"
-        if [ ! -x "$JAVACMD" ]; then
-            die "JAVA_HOME is set to an invalid directory: $JAVA_HOME"
-        fi
-    else
-        JAVACMD="java"
-        which java >/dev/null 2>&1 || die "ERROR: JAVA_HOME is not set and no 'java' command could be found."
-    fi
-}
-
 die() {
     echo
     echo "ERROR: $*"
@@ -47,12 +35,29 @@ die() {
     exit 1
 }
 
-set_java_home
+if [ -n "$JAVA_HOME" ] ; then
+    if [ -x "$JAVA_HOME/jre/sh/java" ] ; then
+        JAVACMD="$JAVA_HOME/jre/sh/java"
+    else
+        JAVACMD="$JAVA_HOME/bin/java"
+    fi
+    if [ ! -x "$JAVACMD" ] ; then
+        die "ERROR: JAVA_HOME is set to an invalid directory: $JAVA_HOME"
+    fi
+else
+    JAVACMD="java"
+    which java >/dev/null 2>&1 || die "ERROR: JAVA_HOME is not set and no 'java' command found."
+fi
 
-# Collect all arguments for the java command
-eval set -- $DEFAULT_JVM_OPTS '"$@"'
-
-exec "$JAVACMD" "$@" \
+# ── FIXED: Pass JVM opts and Gradle task args separately ─────────────────────
+# Bug was: eval set + double "$@" caused task names (e.g. lintDebug)
+# to be parsed as Java main class names.
+exec "$JAVACMD" \
+    -Xmx512m \
+    -Xms64m \
+    ${JAVA_OPTS} \
+    ${GRADLE_OPTS} \
+    "-Dorg.gradle.appname=$APP_BASE_NAME" \
     -classpath "$CLASSPATH" \
     org.gradle.wrapper.GradleWrapperMain \
     "$@"

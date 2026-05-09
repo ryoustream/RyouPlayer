@@ -75,18 +75,19 @@ android {
     signingConfigs {
         create("release") {
             if (signingProps != null) {
-                // From signing.properties file
+                // From signing.properties file (local build)
                 storeFile = file(signingProps.getProperty("storeFile", "keystore/release.keystore"))
                 storePassword = signingProps.getProperty("storePassword", "")
                 keyAlias = signingProps.getProperty("keyAlias", "ryoustream")
                 keyPassword = signingProps.getProperty("keyPassword", "")
             } else {
-                // From environment variables (GitHub Actions / CI)
+                // From environment variables (GitHub Actions)
                 val keystoreB64 = System.getenv("KEYSTORE_BASE64")
-                if (keystoreB64 != null) {
-                    val keystoreFile = file("${buildDir}/keystore/release.keystore")
+                if (!keystoreB64.isNullOrEmpty()) {
+                    val keystoreBytes = java.util.Base64.getDecoder().decode(keystoreB64)
+                    val keystoreFile = file("${layout.buildDirectory.get()}/keystore/release.keystore")
                     keystoreFile.parentFile.mkdirs()
-                    keystoreFile.writeBytes(android.util.Base64.decode(keystoreB64, android.util.Base64.DEFAULT))
+                    keystoreFile.writeBytes(keystoreBytes)
                     storeFile = keystoreFile
                 }
                 storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""

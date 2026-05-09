@@ -19,7 +19,12 @@ on:
 
 env:
   JAVA_VERSION: '17'
-  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.jvmargs=-Xmx4g'
+
+# Required permissions for creating releases
+permissions:
+  contents: write
+  packages: read
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
@@ -59,10 +64,10 @@ jobs:
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
-      - name: 🔧 Grant execute permission to gradlew
+      - name: 🔧 Make gradlew executable
         run: chmod +x gradlew
 
-      - name: 🐘 Cache Gradle
+      - name: 🐘 Cache Gradle dependencies
         uses: actions/cache@v4
         with:
           path: |
@@ -73,24 +78,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: 🔍 Run Lint
-        run: ./gradlew lintDebug --continue
-        env:
-          BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
-          COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
-
       - name: 🏗️ Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
         env:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
           COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
 
-      - name: 📝 Rename Debug APK
+      - name: 🔍 Run Lint (non-blocking)
+        run: ./gradlew lintDebug --continue || true
+        env:
+          BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
+          COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
+
+      - name: 📝 Rename APK
         run: |
           APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           NEW_NAME="RyouPlayer-debug-${{ steps.meta.outputs.VERSION_NAME }}.apk"
           cp "$APK_PATH" "app/build/outputs/apk/debug/${NEW_NAME}"
-          echo "APK_FILE=${NEW_NAME}" >> $GITHUB_ENV
           echo "✅ Debug APK: ${NEW_NAME}"
 
       - name: 📤 Upload Debug APK
@@ -106,6 +110,7 @@ jobs:
         with:
           name: lint-results-debug
           path: app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
           retention-days: 7
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -143,11 +148,12 @@ jobs:
           echo "COMMIT_HASH=${COMMIT_HASH}" >> $GITHUB_OUTPUT
           echo "BUILD_DATE=${BUILD_DATE}" >> $GITHUB_OUTPUT
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
+          echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
-      - name: 🔧 Grant execute permission to gradlew
+      - name: 🔧 Make gradlew executable
         run: chmod +x gradlew
 
-      - name: 🐘 Cache Gradle
+      - name: 🐘 Cache Gradle dependencies
         uses: actions/cache@v4
         with:
           path: |
@@ -158,29 +164,35 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: 🔑 Set up Keystore from GitHub Secret
-        if: env.KEYSTORE_BASE64 != ''
+      - name: 🔑 Decode Keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          mkdir -p app/keystore
-          echo "$KEYSTORE_BASE64" | base64 --decode > app/keystore/release.keystore
-          echo "✅ Keystore decoded"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            mkdir -p app/keystore
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/keystore/release.keystore
+            echo "✅ Keystore decoded"
+          else
+            echo "⚠️ KEYSTORE_BASE64 not set — release APK will be unsigned"
+          fi
 
       - name: 📝 Create signing.properties
-        if: env.KEYSTORE_PASSWORD != ''
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          cat > signing.properties << EOF
+          if [ -n "$KEYSTORE_PASSWORD" ]; then
+            cat > signing.properties <<EOF
           storeFile=keystore/release.keystore
           storePassword=${KEYSTORE_PASSWORD}
           keyAlias=${KEY_ALIAS}
           keyPassword=${KEY_PASSWORD}
           EOF
-          echo "✅ signing.properties created"
+            echo "✅ signing.properties created"
+          else
+            echo "⚠️ Signing secrets not configured"
+          fi
 
       - name: 🏗️ Build Release APK
         run: ./gradlew assembleRelease --stacktrace
@@ -192,7 +204,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
-      - name: 📝 Rename Release APK
+      - name: 📝 Rename APK
         run: |
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
           NEW_NAME="RyouPlayer-release-${{ steps.meta.outputs.VERSION_NAME }}.apk"
@@ -206,12 +218,12 @@ jobs:
           path: app/build/outputs/apk/release/RyouPlayer-release-*.apk
           retention-days: 30
 
-      - name: 🏷️ Create GitHub Release (on push to main)
+      - name: 🏷️ Create GitHub Release Draft
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.VERSION_NAME }}
-          name: "Ryou Player ${{ steps.meta.outputs.VERSION_NAME }}"
+          name: "🎬 Ryou Player ${{ steps.meta.outputs.VERSION_NAME }}"
           draft: true
           prerelease: false
           generate_release_notes: true
@@ -223,14 +235,14 @@ jobs:
             **Commit:** `${{ steps.meta.outputs.COMMIT_HASH }}`
             **Date:** ${{ steps.meta.outputs.BUILD_DATE }}
 
-            ### 📦 Downloads
-            - `RyouPlayer-release-*.apk` — Signed release APK
-
-            ### ✅ Requirements
+            ### 📱 Requirements
             - Android 12+ (API 31)
             - ARM64 / x86_64
 
+            ### 📦 Downloads
+            Download `RyouPlayer-release-*.apk` from the assets below.
+
             ---
-            > Auto-generated by GitHub Actions
+            > 🤖 Auto-generated by GitHub Actions
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

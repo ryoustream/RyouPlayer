@@ -23,8 +23,10 @@ captures/
 
 # ── Signing — NEVER commit these ─────────────────────────────────────────────
 signing.properties
-keystore/
-*.keystore
+app/keystore/*.keystore
+app/keystore/*.jks
+app/keystore/*.p12
+signing.properties
 *.jks
 
 # ── ProGuard mappings ─────────────────────────────────────────────────────────
