@@ -3,13 +3,14 @@ package com.ryoustream.player.presentation.home
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -19,11 +20,16 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.ryoustream.player.domain.model.MediaFolder
 import com.ryoustream.player.domain.model.MediaItem
 import com.ryoustream.player.domain.model.MediaSortOrder
@@ -48,8 +54,9 @@ fun HomeScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showSortMenu by remember { mutableStateOf(false) }
 
-    val displayItems = when {
+    val displayVideos = when {
         folderId != null -> uiState.videos.filter { it.folderId == folderId }
+        uiState.searchQuery.isNotEmpty() -> uiState.videos
         uiState.selectedTab == HomeTab.RECENT -> uiState.recentVideos
         uiState.selectedTab == HomeTab.FAVORITES -> uiState.favoriteVideos
         else -> uiState.videos
@@ -60,11 +67,15 @@ fun HomeScreen(
         topBar = {
             LargeTopAppBar(
                 title = {
-                    if (uiState.searchQuery.isNotEmpty()) {
-                        Text("${uiState.videos.size} results", maxLines = 1)
-                    } else {
-                        Text(folderTitle ?: "Ryou Player", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                    Text(
+                        text = when {
+                            uiState.searchQuery.isNotEmpty() -> "${uiState.videos.size} results"
+                            folderTitle != null -> folderTitle
+                            else -> "Ryou Player"
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
                 navigationIcon = {
                     if (onBack != null) {
@@ -74,20 +85,22 @@ fun HomeScreen(
                     }
                 },
                 actions = {
-                    // View mode toggle
-                    IconButton(onClick = { viewModel.onViewModeToggle() }) {
-                        Icon(
-                            imageVector = if (uiState.viewMode == ViewMode.GRID)
-                                Icons.Default.ViewList else Icons.Default.GridView,
-                            contentDescription = "Toggle view mode",
-                        )
+                    if (uiState.selectedTab != HomeTab.FOLDERS) {
+                        IconButton(onClick = { viewModel.onViewModeToggle() }) {
+                            Icon(
+                                imageVector = if (uiState.viewMode == ViewMode.GRID)
+                                    Icons.Default.ViewList else Icons.Default.GridView,
+                                contentDescription = "Toggle view",
+                            )
+                        }
                     }
-                    // Sort
-                    IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.Default.Sort, contentDescription = "Sort")
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(Icons.Default.Sort, contentDescription = "Sort")
+                        }
                         DropdownMenu(
                             expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
+                            onDismissRequest = { showSortMenu = false },
                         ) {
                             MediaSortOrder.values().forEach { order ->
                                 DropdownMenuItem(
@@ -99,47 +112,60 @@ fun HomeScreen(
                                     onClick = {
                                         viewModel.onSortOrderChange(order)
                                         showSortMenu = false
-                                    }
+                                    },
                                 )
                             }
                         }
                     }
-                    // Rescan
                     IconButton(onClick = { viewModel.onRescanMedia() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Rescan media")
+                        Icon(Icons.Default.Refresh, contentDescription = "Rescan")
                     }
-                    // Settings
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                ),
             )
         },
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
         ) {
-            // Search bar
-            SearchBar(
-                uiState = uiState,
-                onQueryChange = viewModel::onSearchQueryChange,
-                onClear = viewModel::clearSearch,
+            // Search
+            OutlinedTextField(
+                value = uiState.searchQuery,
+                onValueChange = viewModel::onSearchQueryChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Search videos…") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = {
+                    AnimatedVisibility(
+                        visible = uiState.searchQuery.isNotEmpty(),
+                        enter = fadeIn(), exit = fadeOut(),
+                    ) {
+                        IconButton(onClick = viewModel::clearSearch) {
+                            Icon(Icons.Default.Close, null)
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge,
             )
 
-            // Tabs (only on main screen, not folder detail)
+            // Tabs
             if (folderId == null && uiState.searchQuery.isEmpty()) {
                 ScrollableTabRow(
                     selectedTabIndex = uiState.selectedTab.ordinal,
                     edgePadding = 16.dp,
                     indicator = { tabPositions ->
                         SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[uiState.selectedTab.ordinal]),
+                            modifier = Modifier.tabIndicatorOffset(
+                                tabPositions[uiState.selectedTab.ordinal]
+                            ),
                             color = MaterialTheme.colorScheme.primary,
                         )
                     },
@@ -149,34 +175,114 @@ fun HomeScreen(
                         Tab(
                             selected = uiState.selectedTab == tab,
                             onClick = { viewModel.onTabSelected(tab) },
-                            text = {
-                                Text(
-                                    text = tab.label,
-                                    style = MaterialTheme.typography.labelLarge,
-                                )
-                            }
+                            text = { Text(tab.label, style = MaterialTheme.typography.labelLarge) },
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(Modifier.height(4.dp))
             }
 
             // Content
             when {
                 uiState.isLoading -> LoadingGrid()
-                displayItems.isEmpty() -> EmptyContent(
-                    tab = if (folderId != null) HomeTab.ALL else uiState.selectedTab,
-                    onRescan = viewModel::onRescanMedia,
+
+                uiState.selectedTab == HomeTab.FOLDERS && folderId == null -> {
+                    if (uiState.folders.isEmpty()) {
+                        EmptyContent(HomeTab.FOLDERS, viewModel::onRescanMedia)
+                    } else {
+                        FolderGrid(folders = uiState.folders, onFolderClick = onFolderClick)
+                    }
+                }
+
+                displayVideos.isEmpty() ->
+                    EmptyContent(
+                        tab = if (folderId != null) HomeTab.ALL else uiState.selectedTab,
+                        onRescan = viewModel::onRescanMedia,
+                    )
+
+                uiState.viewMode == ViewMode.GRID ->
+                    VideoGrid(displayVideos, onMediaClick, { viewModel.onToggleFavorite(it) })
+
+                else ->
+                    VideoList(displayVideos, onMediaClick, { viewModel.onToggleFavorite(it) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderGrid(folders: List<MediaFolder>, onFolderClick: (MediaFolder) -> Unit) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 160.dp),
+        contentPadding = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        items(items = folders, key = { it.id }) { folder ->
+            FolderCard(folder = folder, onClick = { onFolderClick(folder) })
+        }
+    }
+}
+
+@Composable
+private fun FolderCard(folder: MediaFolder, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (folder.thumbnailUri != null) {
+                    AsyncImage(
+                        model = folder.thumbnailUri,
+                        contentDescription = folder.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)))
+                }
+                Icon(
+                    Icons.Default.Folder, null,
+                    tint = if (folder.thumbnailUri != null) Color.White.copy(0.9f)
+                    else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp),
                 )
-                uiState.viewMode == ViewMode.GRID -> VideoGrid(
-                    items = displayItems,
-                    onMediaClick = onMediaClick,
-                    onFavoriteToggle = { viewModel.onToggleFavorite(it) },
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color.Black.copy(alpha = 0.7f),
+                ) {
+                    Text(
+                        "${folder.mediaCount}",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    )
+                }
+            }
+            Column(Modifier.padding(10.dp)) {
+                Text(
+                    folder.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                else -> VideoList(
-                    items = displayItems,
-                    onMediaClick = onMediaClick,
-                    onFavoriteToggle = { viewModel.onToggleFavorite(it) },
+                Text(
+                    "${folder.mediaCount} videos",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -184,43 +290,8 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SearchBar(
-    uiState: HomeUiState,
-    onQueryChange: (String) -> Unit,
-    onClear: () -> Unit,
-) {
-    OutlinedTextField(
-        value = uiState.searchQuery,
-        onValueChange = onQueryChange,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        placeholder = { Text("Search videos...") },
-        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-        trailingIcon = {
-            AnimatedVisibility(
-                visible = uiState.searchQuery.isNotEmpty(),
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Default.Close, contentDescription = "Clear search")
-                }
-            }
-        },
-        singleLine = true,
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-        ),
-    )
-}
-
-@Composable
 private fun VideoGrid(
-    items: List<MediaItem>,
-    onMediaClick: (MediaItem) -> Unit,
+    items: List<MediaItem>, onMediaClick: (MediaItem) -> Unit,
     onFavoriteToggle: (Long) -> Unit,
 ) {
     LazyVerticalGrid(
@@ -242,14 +313,10 @@ private fun VideoGrid(
 
 @Composable
 private fun VideoList(
-    items: List<MediaItem>,
-    onMediaClick: (MediaItem) -> Unit,
+    items: List<MediaItem>, onMediaClick: (MediaItem) -> Unit,
     onFavoriteToggle: (Long) -> Unit,
 ) {
-    LazyColumn(
-        contentPadding = PaddingValues(vertical = 4.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
+    LazyColumn(contentPadding = PaddingValues(vertical = 4.dp), modifier = Modifier.fillMaxSize()) {
         items(items = items, key = { it.id }) { item ->
             VideoCardList(
                 item = item,
@@ -257,9 +324,8 @@ private fun VideoList(
                 onFavoriteToggle = { onFavoriteToggle(item.id) },
             )
             HorizontalDivider(
-                modifier = Modifier.padding(start = 148.dp),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                modifier = Modifier.padding(start = 148.dp), thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
             )
         }
     }
@@ -269,12 +335,10 @@ private fun VideoList(
 private fun LoadingGrid() {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 160.dp),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(6) { VideoCardShimmer() }
-    }
+    ) { items(6) { VideoCardShimmer() } }
 }
 
 @Composable
@@ -285,6 +349,7 @@ private fun EmptyContent(tab: HomeTab, onRescan: () -> Unit) {
                 imageVector = when (tab) {
                     HomeTab.FAVORITES -> Icons.Outlined.FavoriteBorder
                     HomeTab.RECENT -> Icons.Outlined.History
+                    HomeTab.FOLDERS -> Icons.Outlined.Folder
                     else -> Icons.Outlined.VideoLibrary
                 },
                 contentDescription = null,
@@ -295,14 +360,16 @@ private fun EmptyContent(tab: HomeTab, onRescan: () -> Unit) {
         title = when (tab) {
             HomeTab.FAVORITES -> "No favorites yet"
             HomeTab.RECENT -> "No recent videos"
+            HomeTab.FOLDERS -> "No folders found"
             else -> "No videos found"
         },
         subtitle = when (tab) {
-            HomeTab.FAVORITES -> "Tap the heart icon on any video to add it here"
-            HomeTab.RECENT -> "Your recently played videos will appear here"
+            HomeTab.FAVORITES -> "Tap the heart on any video to add it here"
+            HomeTab.RECENT -> "Your recently played videos appear here"
+            HomeTab.FOLDERS -> "No video folders found on this device"
             else -> "No video files found on this device"
         },
-        action = if (tab == HomeTab.ALL) {
+        action = if (tab == HomeTab.ALL || tab == HomeTab.FOLDERS) {
             { Button(onClick = onRescan) { Text("Scan for Videos") } }
         } else null,
     )
