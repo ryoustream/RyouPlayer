@@ -78,7 +78,7 @@ data class PlayerUiState(
     val showSpeedMenu: Boolean                = false,
     val showSubtitleStyleSheet: Boolean       = false,
     // MKV Metadata
-    val chapterMarks: List<Pair<Long, String>>= emptyList(),
+    val chapterMarks: List<Pair<Long, String>> = emptyList(),
     val mediaTitle: String                    = "",
     val error: String?                        = null,
 )
