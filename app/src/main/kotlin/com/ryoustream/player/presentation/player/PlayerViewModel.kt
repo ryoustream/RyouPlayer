@@ -275,7 +275,7 @@ class PlayerViewModel @Inject constructor(
         val group = player.currentTracks.groups.getOrNull(info.groupIndex) ?: return
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
-            .clearDisabledTrackTypes()
+            .setDisabledTrackTypes(emptySet())
             .setOverrideForType(
                 androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, info.trackIndex)
             )
