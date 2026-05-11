@@ -1,17 +1,24 @@
 package com.ryoustream.player.presentation.player
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,8 +42,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.ryoustream.player.domain.model.AspectRatioMode
-import com.ryoustream.player.domain.model.MediaItem
-import com.ryoustream.player.domain.model.PlaybackState
+import com.ryoustream.player.domain.model.MediaItem as DomainMediaItem
 import com.ryoustream.player.domain.model.RepeatMode
 
 @OptIn(UnstableApi::class)
@@ -48,20 +54,19 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-
-    val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
-    val showControls by viewModel.showControls.collectAsStateWithLifecycle()
-    val isLocked by viewModel.isLocked.collectAsStateWithLifecycle()
-    val aspectRatioMode by viewModel.aspectRatioMode.collectAsStateWithLifecycle()
-    val brightnessLevel by viewModel.brightnessLevel.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
 
+    // Gesture delta state
     var seekDelta by remember { mutableLongStateOf(0L) }
     var isDraggingSeek by remember { mutableStateOf(false) }
     var isDraggingVolume by remember { mutableStateOf(false) }
     var isDraggingBrightness by remember { mutableStateOf(false) }
-    var volumeLevel by remember { mutableFloatStateOf(0.5f) }
-    var brightnessDisplay by remember { mutableFloatStateOf(brightnessLevel) }
+
+    // Subtitle file picker
+    val subtitlePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let { viewModel.loadExternalSubtitleFromUri(it) } }
 
     // Keep screen on
     DisposableEffect(Unit) {
@@ -69,356 +74,458 @@ fun PlayerScreen(
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // Hide system UI
+    // Hide system UI (immersive)
     DisposableEffect(Unit) {
-        activity?.let {
-            WindowCompat.setDecorFitsSystemWindows(it.window, false)
-            WindowInsetsControllerCompat(it.window, it.window.decorView).apply {
+        activity?.let { act ->
+            WindowCompat.setDecorFitsSystemWindows(act.window, false)
+            WindowInsetsControllerCompat(act.window, act.window.decorView).apply {
                 hide(WindowInsetsCompat.Type.systemBars())
-                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         }
         onDispose {
-            activity?.let {
-                WindowCompat.setDecorFitsSystemWindows(it.window, true)
-                WindowInsetsControllerCompat(it.window, it.window.decorView)
+            activity?.let { act ->
+                WindowCompat.setDecorFitsSystemWindows(act.window, true)
+                WindowInsetsControllerCompat(act.window, act.window.decorView)
                     .show(WindowInsetsCompat.Type.systemBars())
             }
         }
     }
 
-    // Init player and load media
+    // ── Orientation handling ────────────────────────────────────────────────
+    val videoWidth  = state.playbackState.mediaItem?.width  ?: 0
+    val videoHeight = state.playbackState.mediaItem?.height ?: 0
+    LaunchedEffect(state.orientationMode, videoWidth, videoHeight) {
+        activity?.requestedOrientation = when (state.orientationMode) {
+            OrientationMode.AUTO ->
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR
+            OrientationMode.SENSOR_VIDEO -> {
+                // Lock to axis matching the video's aspect ratio
+                if (videoWidth >= videoHeight)
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                else
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            }
+            OrientationMode.LOCK_PORTRAIT ->
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            OrientationMode.LOCK_PORTRAIT_REVERSE ->
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+            OrientationMode.LOCK_LANDSCAPE ->
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            OrientationMode.LOCK_LANDSCAPE_REVERSE ->
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+        }
+    }
+
+    // Reset orientation when leaving
+    DisposableEffect(Unit) {
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+    }
+
+    // Brightness
+    LaunchedEffect(state.brightnessLevel) {
+        if (state.brightnessLevel >= 0f) {
+            activity?.window?.attributes = activity?.window?.attributes?.apply {
+                screenBrightness = state.brightnessLevel
+            }
+        }
+    }
+
+    // Init + play
     LaunchedEffect(mediaUri) {
         viewModel.initializePlayer()
         viewModel.playUri(mediaUri)
     }
 
+    // ── Safe edge widths for gestures (avoid navigation gesture area) ──────
+    val safeEdge = 48.dp  // px from edges = no gesture zone
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            // Single tap = toggle controls, double tap = seek
-            .pointerInput(isLocked) {
+            // ── Single / Double tap ─────────────────────────────────────
+            .pointerInput(state.isLocked) {
                 detectTapGestures(
                     onTap = { viewModel.toggleControls() },
                     onDoubleTap = { offset ->
-                        if (!isLocked) {
-                            if (offset.x < size.width / 2) viewModel.seekBackward(10)
-                            else viewModel.seekForward(10)
+                        if (!state.isLocked) {
+                            val safeEdgePx = 48f * 3f  // ~48dp in px (approx for gesture dead zone)
+                            val zone = size.width / 2f
+                            when {
+                                offset.x < safeEdgePx || offset.x > size.width - safeEdgePx -> { /* edge — ignore */ }
+                                offset.x < zone -> viewModel.seekBackward(10)
+                                else            -> viewModel.seekForward(10)
+                            }
                             viewModel.showControlsTemporarily()
                         }
                     }
                 )
             }
-            // Horizontal swipe = seek
-            .pointerInput(isLocked) {
-                if (isLocked) return@pointerInput
+            // ── Horizontal drag = seek (with safe edge margins) ─────────
+            .pointerInput(state.isLocked) {
+                if (state.isLocked) return@pointerInput
+                val safeEdgePx = 48f * 3f  // ~48dp in px (approx for gesture dead zone)
                 detectHorizontalDragGestures(
-                    onDragStart = { isDraggingSeek = true; seekDelta = 0L },
+                    onDragStart = { offset ->
+                        if (offset.x > safeEdgePx && offset.x < size.width - safeEdgePx)
+                            isDraggingSeek = true
+                        seekDelta = 0L
+                    },
                     onDragEnd = {
                         if (isDraggingSeek) {
                             viewModel.seekTo(
-                                (playbackState.currentPosition + seekDelta)
-                                    .coerceIn(0L, playbackState.duration)
+                                (state.playbackState.currentPosition + seekDelta)
+                                    .coerceIn(0L, state.playbackState.duration)
                             )
                         }
                         isDraggingSeek = false; seekDelta = 0L
                     },
-                    onHorizontalDrag = { _, dragAmount ->
-                        seekDelta += (dragAmount * 150).toLong()
-                    }
+                    onHorizontalDrag = { _, delta ->
+                        if (isDraggingSeek) seekDelta += (delta * 200).toLong()
+                    },
                 )
             }
-            // Vertical swipe = brightness (left) / volume (right)
-            .pointerInput(isLocked) {
-                if (isLocked) return@pointerInput
+            // ── Vertical drag = brightness (left) / volume (right) ──────
+            .pointerInput(state.isLocked) {
+                if (state.isLocked) return@pointerInput
+                val safeEdgePx = 48f * 3f  // ~48dp in px (approx for gesture dead zone)
                 detectVerticalDragGestures(
                     onDragStart = { offset ->
-                        isDraggingVolume = offset.x > size.width / 2
-                        isDraggingBrightness = !isDraggingVolume
+                        val inSafeX = offset.x > safeEdgePx && offset.x < size.width - safeEdgePx
+                        isDraggingVolume     = inSafeX && offset.x > size.width / 2f
+                        isDraggingBrightness = inSafeX && offset.x <= size.width / 2f
                     },
                     onDragEnd = { isDraggingVolume = false; isDraggingBrightness = false },
-                    onVerticalDrag = { _, dragAmount ->
-                        val delta = -dragAmount / 600f
-                        if (isDraggingVolume) {
-                            volumeLevel = (volumeLevel + delta).coerceIn(0f, 1f)
-                        } else if (isDraggingBrightness) {
-                            brightnessDisplay = (brightnessDisplay + delta).coerceIn(0.01f, 1f)
-                            viewModel.setBrightness(brightnessDisplay)
-                            activity?.window?.attributes = activity?.window?.attributes?.apply {
-                                screenBrightness = brightnessDisplay
-                            }
-                        }
-                    }
+                    onVerticalDrag = { _, delta ->
+                        val d = -delta / 600f
+                        if (isDraggingVolume)     viewModel.setVolume(state.volumeLevel + d)
+                        if (isDraggingBrightness) viewModel.setBrightness(
+                            (state.brightnessLevel.let { if (it < 0) 0.5f else it }) + d
+                        )
+                    },
                 )
             }
     ) {
-        // ── ExoPlayer Surface ──────────────────────────────────────────────────
+        // ── Video Surface ─────────────────────────────────────────────────
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    resizeMode    = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
-            update = { playerView ->
-                // KEY FIX: Actually attach the ExoPlayer to the PlayerView
-                playerView.player = player
-                playerView.resizeMode = when (aspectRatioMode) {
-                    AspectRatioMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                    AspectRatioMode.CROP -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            update = { view ->
+                view.player = player
+                view.resizeMode = when (state.aspectRatioMode) {
+                    AspectRatioMode.FILL    -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                    AspectRatioMode.CROP    -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     AspectRatioMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                    else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    else                    -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
             modifier = Modifier.fillMaxSize(),
         )
 
-        // ── Seek overlay ───────────────────────────────────────────────────────
+        // ── ASS/Custom Subtitle overlay ───────────────────────────────────
+        if (state.subtitleEnabled && state.subtitleCues.isNotEmpty()) {
+            val adjustedMs = state.playbackState.currentPosition + state.subtitleDelay
+            AssSubtitleRenderer(
+                cues        = state.subtitleCues,
+                positionMs  = adjustedMs,
+                style       = state.subtitleStyle,
+                modifier    = Modifier.fillMaxSize().padding(bottom = 80.dp),
+            )
+        }
+
+        // ── Seek preview ──────────────────────────────────────────────────
         AnimatedVisibility(visible = isDraggingSeek, enter = fadeIn(), exit = fadeOut()) {
             Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)),
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.Black.copy(alpha = 0.75f),
+                val preview = (state.playbackState.currentPosition + seekDelta)
+                    .coerceIn(0, state.playbackState.duration)
+                SeekPreview(seekDelta = seekDelta, previewMs = preview)
+            }
+        }
+
+        // ── Volume indicator ──────────────────────────────────────────────
+        AnimatedVisibility(
+            visible  = isDraggingVolume,
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 56.dp),
+            enter = fadeIn(), exit = fadeOut(),
+        ) {
+            GestureIndicatorBar(
+                icon  = if (state.volumeLevel > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                value = state.volumeLevel,
+                label = "${(state.volumeLevel * 100).toInt()}%",
+            )
+        }
+
+        // ── Brightness indicator ──────────────────────────────────────────
+        AnimatedVisibility(
+            visible  = isDraggingBrightness,
+            modifier = Modifier.align(Alignment.CenterStart).padding(start = 56.dp),
+            enter = fadeIn(), exit = fadeOut(),
+        ) {
+            GestureIndicatorBar(
+                icon  = Icons.Default.Brightness6,
+                value = state.brightnessLevel.let { if (it < 0) 0.5f else it },
+                label = "${((state.brightnessLevel.let { if (it < 0) 0.5f else it }) * 100).toInt()}%",
+            )
+        }
+
+        // ── Buffering spinner ─────────────────────────────────────────────
+        if (state.playbackState.isBuffering && !isDraggingSeek) {
+            CircularProgressIndicator(
+                color    = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(48.dp),
+                strokeWidth = 3.dp,
+            )
+        }
+
+        // ── Player Controls ───────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = state.showControls && !isDraggingSeek,
+            enter   = fadeIn(tween(200)),
+            exit    = fadeOut(tween(300)),
+        ) {
+            PlayerControls(
+                state     = state,
+                onBack    = { viewModel.savePosition(); onBack() },
+                viewModel = viewModel,
+                onSubtitlePick = { subtitlePicker.launch("*/*") },
+            )
+        }
+
+        // ── Lock overlay ──────────────────────────────────────────────────
+        if (state.isLocked) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
+                IconButton(
+                    onClick  = viewModel::toggleLock,
+                    modifier = Modifier.padding(start = 20.dp)
+                        .background(Color.Black.copy(0.5f), CircleShape),
                 ) {
-                    val previewPos = (playbackState.currentPosition + seekDelta)
-                        .coerceIn(0L, playbackState.duration)
-                    Column(
-                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Icon(
-                            if (seekDelta >= 0) Icons.Default.FastForward else Icons.Default.FastRewind,
-                            null, tint = Color.White, modifier = Modifier.size(32.dp),
-                        )
-                        Text(
-                            MediaItem.formatDuration(previewPos),
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            if (seekDelta >= 0) "+${seekDelta / 1000}s" else "${seekDelta / 1000}s",
-                            color = Color.White.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
+                    Icon(Icons.Default.Lock, "Unlock", tint = Color.White)
                 }
             }
         }
 
-        // ── Volume indicator ───────────────────────────────────────────────────
-        AnimatedVisibility(
-            visible = isDraggingVolume,
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp),
-            enter = fadeIn(), exit = fadeOut(),
-        ) {
-            GestureIndicator(
-                icon = if (volumeLevel > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
-                value = volumeLevel,
-                label = "${(volumeLevel * 100).toInt()}%",
+        // ── Subtitle Panel ────────────────────────────────────────────────
+        if (state.showSubtitlePanel) {
+            SubtitlePanel(
+                state      = state,
+                viewModel  = viewModel,
+                onPickFile = { subtitlePicker.launch("*/*") },
+                onDismiss  = viewModel::hideSubtitlePanel,
             )
         }
 
-        // ── Brightness indicator ───────────────────────────────────────────────
-        AnimatedVisibility(
-            visible = isDraggingBrightness,
-            modifier = Modifier.align(Alignment.CenterStart).padding(start = 24.dp),
-            enter = fadeIn(), exit = fadeOut(),
-        ) {
-            GestureIndicator(
-                icon = Icons.Default.Brightness6,
-                value = brightnessDisplay,
-                label = "${(brightnessDisplay * 100).toInt()}%",
+        // ── Audio Panel ───────────────────────────────────────────────────
+        if (state.showAudioPanel) {
+            AudioPanel(
+                state     = state,
+                viewModel = viewModel,
+                onDismiss = viewModel::hideAudioPanel,
             )
         }
 
-        // ── Buffering spinner ──────────────────────────────────────────────────
-        AnimatedVisibility(
-            visible = playbackState.isBuffering && !isDraggingSeek,
-            modifier = Modifier.align(Alignment.Center),
-        ) {
-            CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp)
-        }
-
-        // ── Controls overlay ───────────────────────────────────────────────────
-        AnimatedVisibility(
-            visible = showControls && !isDraggingSeek,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(300)),
-        ) {
-            PlayerControlsOverlay(
-                playbackState = playbackState,
-                isLocked = isLocked,
-                aspectRatioMode = aspectRatioMode,
-                onBack = { viewModel.saveCurrentPosition(); onBack() },
-                onPlayPause = viewModel::playPause,
-                onSeekForward = { viewModel.seekForward(10) },
-                onSeekBackward = { viewModel.seekBackward(10) },
-                onSeekTo = viewModel::seekTo,
-                onToggleLock = viewModel::toggleLock,
-                onToggleRepeat = viewModel::toggleRepeatMode,
-                onToggleShuffle = viewModel::toggleShuffle,
-                onToggleAspect = viewModel::toggleAspectRatio,
-                onSpeedChange = viewModel::setPlaybackSpeed,
+        // ── Subtitle Style Sheet ──────────────────────────────────────────
+        if (state.showSubtitleStyleSheet) {
+            SubtitleStyleSheet(
+                currentStyle  = state.subtitleStyle,
+                onStyleChange = viewModel::setSubtitleStyle,
+                onDismiss     = viewModel::hideSubtitleStyleSheet,
             )
-        }
-
-        // ── Lock indicator ─────────────────────────────────────────────────────
-        if (isLocked) {
-            LockOverlay(onUnlock = viewModel::toggleLock)
         }
     }
 }
 
-@Composable
-private fun PlayerControlsOverlay(
-    playbackState: PlaybackState,
-    isLocked: Boolean,
-    aspectRatioMode: AspectRatioMode,
-    onBack: () -> Unit,
-    onPlayPause: () -> Unit,
-    onSeekForward: () -> Unit,
-    onSeekBackward: () -> Unit,
-    onSeekTo: (Long) -> Unit,
-    onToggleLock: () -> Unit,
-    onToggleRepeat: () -> Unit,
-    onToggleShuffle: () -> Unit,
-    onToggleAspect: () -> Unit,
-    onSpeedChange: (Float) -> Unit,
-) {
-    var showSpeedMenu by remember { mutableStateOf(false) }
-    val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
+// ─── Main Controls Overlay ────────────────────────────────────────────────────
 
-    Box(modifier = Modifier.fillMaxSize()) {
+@Composable
+private fun PlayerControls(
+    state:          PlayerUiState,
+    onBack:         () -> Unit,
+    viewModel:      PlayerViewModel,
+    onSubtitlePick: () -> Unit,
+) {
+    val pb     = state.playbackState
+    var showOrientationMenu by remember { mutableStateOf(false) }
+    var showSpeedMenu       by remember { mutableStateOf(false) }
+    val speeds = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f)
+
+    Box(Modifier.fillMaxSize()) {
         // Top gradient
         Box(
-            modifier = Modifier.fillMaxWidth().height(120.dp).align(Alignment.TopCenter)
+            Modifier.fillMaxWidth().height(110.dp).align(Alignment.TopCenter)
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(0.75f), Color.Transparent)))
         )
         // Bottom gradient
         Box(
-            modifier = Modifier.fillMaxWidth().height(160.dp).align(Alignment.BottomCenter)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.8f))))
+            Modifier.fillMaxWidth().height(180.dp).align(Alignment.BottomCenter)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.85f))))
         )
 
-        // Top bar
+        // ── Top Bar ───────────────────────────────────────────────────────
         Row(
-            modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
-                .padding(horizontal = 4.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().align(Alignment.TopCenter)
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, "Back", tint = Color.White)
             }
             Text(
-                text = playbackState.mediaItem?.displayName ?: "",
-                color = Color.White,
-                style = MaterialTheme.typography.titleSmall,
+                state.mediaTitle.ifEmpty { pb.mediaItem?.displayName ?: "" },
+                color  = Color.White,
+                style  = MaterialTheme.typography.titleSmall,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            TextButton(onClick = onToggleAspect) {
-                Text(aspectRatioMode.label, color = Color.White, fontSize = 12.sp)
+            // Aspect ratio
+            TextButton(onClick = viewModel::cycleAspectRatio) {
+                Text(state.aspectRatioMode.label, color = Color.White, fontSize = 11.sp)
             }
+            // Speed
             Box {
                 TextButton(onClick = { showSpeedMenu = true }) {
-                    Text("${playbackState.playbackSpeed}x", color = Color.White, fontSize = 12.sp)
+                    Text("${pb.playbackSpeed}×", color = Color.White, fontSize = 11.sp)
                 }
                 DropdownMenu(showSpeedMenu, { showSpeedMenu = false }) {
-                    speeds.forEach { speed ->
+                    speeds.forEach { spd ->
                         DropdownMenuItem(
-                            text = { Text("${speed}x") },
-                            leadingIcon = { if (playbackState.playbackSpeed == speed) Icon(Icons.Default.Check, null) },
-                            onClick = { onSpeedChange(speed); showSpeedMenu = false },
+                            text = { Text("${spd}×") },
+                            leadingIcon = {
+                                if (pb.playbackSpeed == spd) Icon(Icons.Default.Check, null)
+                            },
+                            onClick = { viewModel.setPlaybackSpeed(spd); showSpeedMenu = false },
                         )
                     }
                 }
             }
-            IconButton(onClick = onToggleLock) {
+            // Orientation
+            Box {
+                IconButton(onClick = { showOrientationMenu = true }) {
+                    Icon(Icons.Default.ScreenRotation, "Orientation", tint = Color.White)
+                }
+                DropdownMenu(showOrientationMenu, { showOrientationMenu = false }) {
+                    OrientationMode.values().forEach { mode ->
+                        DropdownMenuItem(
+                            text = { Text(mode.label) },
+                            leadingIcon = {
+                                if (state.orientationMode == mode) Icon(Icons.Default.Check, null)
+                            },
+                            onClick = { viewModel.setOrientationMode(mode); showOrientationMenu = false },
+                        )
+                    }
+                }
+            }
+            // Lock
+            IconButton(onClick = viewModel::toggleLock) {
                 Icon(
-                    if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                    if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
                     "Lock", tint = Color.White,
                 )
             }
         }
 
-        // Center controls
+        // ── Center Controls ───────────────────────────────────────────────
         Row(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.align(Alignment.Center),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            verticalAlignment     = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onSeekBackward, modifier = Modifier.size(52.dp)) {
-                Icon(Icons.Default.Replay10, "Seek back", tint = Color.White, modifier = Modifier.size(36.dp))
+            IconButton(onClick = { viewModel.seekBackward(10) }, Modifier.size(52.dp)) {
+                Icon(Icons.Default.Replay10, "−10s", tint = Color.White, modifier = Modifier.size(38.dp))
             }
             FloatingActionButton(
-                onClick = onPlayPause,
-                modifier = Modifier.size(60.dp),
-                containerColor = Color.White.copy(alpha = 0.2f),
-                contentColor = Color.White,
+                onClick          = viewModel::playPause,
+                modifier         = Modifier.size(62.dp),
+                containerColor   = Color.White.copy(alpha = 0.15f),
+                contentColor     = Color.White,
+                elevation        = FloatingActionButtonDefaults.elevation(0.dp),
             ) {
-                Icon(
-                    if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    if (playbackState.isPlaying) "Pause" else "Play",
-                    modifier = Modifier.size(38.dp),
-                )
+                if (pb.isBuffering) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                } else {
+                    Icon(
+                        if (pb.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        null, modifier = Modifier.size(38.dp),
+                    )
+                }
             }
-            IconButton(onClick = onSeekForward, modifier = Modifier.size(52.dp)) {
-                Icon(Icons.Default.Forward10, "Seek forward", tint = Color.White, modifier = Modifier.size(36.dp))
+            IconButton(onClick = { viewModel.seekForward(10) }, Modifier.size(52.dp)) {
+                Icon(Icons.Default.Forward10, "+10s", tint = Color.White, modifier = Modifier.size(38.dp))
             }
         }
 
-        // Bottom bar
+        // ── Bottom Bar ────────────────────────────────────────────────────
         Column(
-            modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp).padding(bottom = 8.dp),
         ) {
+            // Time row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(MediaItem.formatDuration(playbackState.currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
-                Text(MediaItem.formatDuration(playbackState.duration), color = Color.White.copy(0.7f), style = MaterialTheme.typography.labelMedium)
+                Text(
+                    DomainMediaItem.formatDuration(pb.currentPosition),
+                    color = Color.White, style = MaterialTheme.typography.labelMedium,
+                )
+                Text(
+                    DomainMediaItem.formatDuration(pb.duration),
+                    color = Color.White.copy(0.65f), style = MaterialTheme.typography.labelMedium,
+                )
             }
-            Spacer(Modifier.height(4.dp))
+            // Seekbar
             Slider(
-                value = playbackState.progress,
-                onValueChange = { onSeekTo((it * playbackState.duration).toLong()) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = Color.White.copy(0.3f),
+                value         = pb.progress,
+                onValueChange = { viewModel.seekTo((it * pb.duration).toLong()) },
+                modifier      = Modifier.fillMaxWidth(),
+                colors        = SliderDefaults.colors(
+                    thumbColor        = Color.White,
+                    activeTrackColor  = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor= Color.White.copy(0.3f),
                 ),
             )
+            // Bottom action row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                // Left: repeat, shuffle
                 Row {
-                    IconButton(onClick = onToggleRepeat) {
+                    IconButton(onClick = viewModel::toggleRepeatMode) {
                         Icon(
-                            when (playbackState.repeatMode) {
+                            when (pb.repeatMode) {
                                 RepeatMode.ONE -> Icons.Default.RepeatOne
-                                else -> Icons.Default.Repeat
+                                RepeatMode.ALL -> Icons.Default.Repeat
+                                else           -> Icons.Default.Repeat
                             },
                             "Repeat",
-                            tint = when (playbackState.repeatMode) {
-                                RepeatMode.NONE -> Color.White.copy(0.5f)
-                                else -> MaterialTheme.colorScheme.primary
-                            },
+                            tint = if (pb.repeatMode == RepeatMode.NONE)
+                                Color.White.copy(0.45f) else MaterialTheme.colorScheme.primary,
                         )
                     }
-                    IconButton(onClick = onToggleShuffle) {
-                        Icon(Icons.Default.Shuffle, "Shuffle",
-                            tint = if (playbackState.shuffleEnabled) MaterialTheme.colorScheme.primary
-                            else Color.White.copy(0.5f))
+                    IconButton(onClick = viewModel::toggleShuffle) {
+                        Icon(
+                            Icons.Default.Shuffle, "Shuffle",
+                            tint = if (pb.shuffleEnabled) MaterialTheme.colorScheme.primary
+                            else Color.White.copy(0.45f),
+                        )
                     }
                 }
+                // Right: subtitle, audio
                 Row {
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.Subtitles, "Subtitles", tint = Color.White.copy(0.8f))
+                    // Subtitle toggle + panel
+                    IconButton(onClick = viewModel::showSubtitlePanel) {
+                        Icon(
+                            Icons.Default.Subtitles, "Subtitles",
+                            tint = if (state.subtitleEnabled) MaterialTheme.colorScheme.primary
+                            else Color.White.copy(0.65f),
+                        )
                     }
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.Tune, "Audio tracks", tint = Color.White.copy(0.8f))
+                    // Audio track panel
+                    IconButton(onClick = viewModel::showAudioPanel) {
+                        Icon(Icons.Default.Audiotrack, "Audio", tint = Color.White.copy(0.85f))
                     }
                 }
             }
@@ -426,38 +533,254 @@ private fun PlayerControlsOverlay(
     }
 }
 
+// ─── Subtitle Panel ───────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GestureIndicator(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun SubtitlePanel(
+    state:     PlayerUiState,
+    viewModel: PlayerViewModel,
+    onPickFile:() -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor   = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text("Subtitles", style = MaterialTheme.typography.titleMedium)
+                Row {
+                    TextButton(onClick = viewModel::showSubtitleStyleSheet) {
+                        Icon(Icons.Default.Palette, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Style")
+                    }
+                    TextButton(onClick = onDismiss) { Text("Done") }
+                }
+            }
+            HorizontalDivider()
+
+            // Delay control
+            var delayText by remember { mutableStateOf(state.subtitleDelay.toString()) }
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Delay (ms):", style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.width(90.dp))
+                IconButton(onClick = {
+                    val d = (state.subtitleDelay - 500L)
+                    viewModel.setSubtitleDelay(d)
+                    delayText = d.toString()
+                }, Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Remove, null, Modifier.size(18.dp))
+                }
+                Text(
+                    "${state.subtitleDelay}ms",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.width(70.dp),
+                )
+                IconButton(onClick = {
+                    val d = (state.subtitleDelay + 500L)
+                    viewModel.setSubtitleDelay(d)
+                    delayText = d.toString()
+                }, Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                }
+                TextButton(onClick = { viewModel.setSubtitleDelay(0L); delayText = "0" }) {
+                    Text("Reset")
+                }
+            }
+            HorizontalDivider()
+
+            // Disable
+            ListItem(
+                headlineContent = { Text("Off") },
+                leadingContent  = {
+                    RadioButton(
+                        selected = !state.subtitleEnabled || state.selectedSubtitleTrack == -1,
+                        onClick  = { viewModel.selectSubtitleTrack(null) },
+                    )
+                },
+                modifier = Modifier.clickable { viewModel.selectSubtitleTrack(null) },
+            )
+
+            // Embedded tracks
+            if (state.subtitleTracks.isNotEmpty()) {
+                Text(
+                    "Embedded", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp),
+                )
+                state.subtitleTracks.forEach { track ->
+                    ListItem(
+                        headlineContent = { Text(track.label) },
+                        leadingContent  = {
+                            RadioButton(
+                                selected = state.subtitleEnabled && state.selectedSubtitleTrack == track.index,
+                                onClick  = { viewModel.selectSubtitleTrack(track) },
+                            )
+                        },
+                        modifier = Modifier.clickable { viewModel.selectSubtitleTrack(track) },
+                    )
+                }
+            }
+
+            // External loaded cues
+            if (state.subtitleCues.isNotEmpty()) {
+                ListItem(
+                    headlineContent = { Text("External file (${state.subtitleCues.size} cues)") },
+                    leadingContent  = {
+                        RadioButton(
+                            selected = state.subtitleEnabled && state.selectedSubtitleTrack == -1 && state.subtitleCues.isNotEmpty(),
+                            onClick  = { viewModel.toggleSubtitle() },
+                        )
+                    },
+                    modifier = Modifier.clickable { viewModel.toggleSubtitle() },
+                )
+            }
+
+            HorizontalDivider()
+            // Pick external file
+            ListItem(
+                headlineContent = { Text("Load subtitle file…") },
+                leadingContent  = { Icon(Icons.Default.FolderOpen, null) },
+                modifier        = Modifier.clickable { onPickFile(); onDismiss() },
+            )
+        }
+    }
+}
+
+// ─── Audio Panel ──────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AudioPanel(
+    state:     PlayerUiState,
+    viewModel: PlayerViewModel,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor   = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text("Audio Track", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onDismiss) { Text("Done") }
+            }
+            HorizontalDivider()
+
+            if (state.audioTracks.isEmpty()) {
+                Text(
+                    "No audio tracks detected",
+                    style    = MaterialTheme.typography.bodyMedium,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            } else {
+                state.audioTracks.forEach { track ->
+                    ListItem(
+                        headlineContent  = { Text(track.label) },
+                        supportingContent = {
+                            if (track.language.isNotEmpty())
+                                Text(track.language, style = MaterialTheme.typography.labelSmall)
+                        },
+                        leadingContent = {
+                            RadioButton(
+                                selected = state.selectedAudioTrack == track.index,
+                                onClick  = { viewModel.selectAudioTrack(track) },
+                            )
+                        },
+                        modifier = Modifier.clickable { viewModel.selectAudioTrack(track) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ─── Seek Preview ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun SeekPreview(seekDelta: Long, previewMs: Long) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color.Black.copy(alpha = 0.78f),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 28.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                if (seekDelta >= 0) Icons.Default.FastForward else Icons.Default.FastRewind,
+                null, tint = Color.White, modifier = Modifier.size(30.dp),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                DomainMediaItem.formatDuration(previewMs),
+                color      = Color.White,
+                style      = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "${if (seekDelta >= 0) "+" else ""}${seekDelta / 1000}s",
+                color = Color.White.copy(0.7f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+// ─── Gesture Indicator ────────────────────────────────────────────────────────
+
+@Composable
+private fun GestureIndicatorBar(
+    icon:  androidx.compose.ui.graphics.vector.ImageVector,
     value: Float,
     label: String,
 ) {
-    Surface(shape = RoundedCornerShape(12.dp), color = Color.Black.copy(alpha = 0.65f)) {
+    Surface(shape = RoundedCornerShape(12.dp), color = Color.Black.copy(alpha = 0.68f)) {
         Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(24.dp))
-            LinearProgressIndicator(
-                progress = { value },
-                modifier = Modifier.width(4.dp).height(80.dp).clip(RoundedCornerShape(4.dp)),
-                color = Color.White, trackColor = Color.White.copy(0.3f),
-            )
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(22.dp))
+            Box(
+                modifier = Modifier
+                    .width(6.dp)
+                    .height(80.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.White.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(value)
+                        .background(Color.White)
+                )
+            }
             Text(label, color = Color.White, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
 
-@Composable
-private fun LockOverlay(onUnlock: () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
-        IconButton(
-            onClick = onUnlock,
-            modifier = Modifier.padding(start = 16.dp)
-                .background(Color.Black.copy(0.5f), CircleShape),
-        ) {
-            Icon(Icons.Default.Lock, "Unlock", tint = Color.White)
-        }
-    }
-}
+

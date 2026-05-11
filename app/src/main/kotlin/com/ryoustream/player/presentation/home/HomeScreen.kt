@@ -38,6 +38,8 @@ import com.ryoustream.player.presentation.components.EmptyStateView
 import com.ryoustream.player.presentation.components.VideoCardGrid
 import com.ryoustream.player.presentation.components.VideoCardList
 import com.ryoustream.player.presentation.components.VideoCardShimmer
+import com.ryoustream.player.presentation.components.VideoOptionsMenu
+import com.ryoustream.player.presentation.components.VideoPropertiesDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -294,6 +296,9 @@ private fun VideoGrid(
     items: List<MediaItem>, onMediaClick: (MediaItem) -> Unit,
     onFavoriteToggle: (Long) -> Unit,
 ) {
+    var menuItem by remember { mutableStateOf<MediaItem?>(null) }
+    var propertiesItem by remember { mutableStateOf<MediaItem?>(null) }
+
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 160.dp),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -306,8 +311,24 @@ private fun VideoGrid(
                 item = item,
                 onClick = { onMediaClick(item) },
                 onFavoriteToggle = { onFavoriteToggle(item.id) },
+                onMoreClick = { menuItem = item },
             )
         }
+    }
+    // 3-dot menu
+    menuItem?.let { item ->
+        VideoOptionsMenu(
+            item = item,
+            expanded = true,
+            onDismiss = { menuItem = null },
+            onPlay = { onMediaClick(item) },
+            onToggleFavorite = { onFavoriteToggle(item.id) },
+            onAddToPlaylist = { /* TODO */ },
+            onProperties = { propertiesItem = item; menuItem = null },
+        )
+    }
+    propertiesItem?.let { item ->
+        VideoPropertiesDialog(item = item, onDismiss = { propertiesItem = null })
     }
 }
 
@@ -316,18 +337,34 @@ private fun VideoList(
     items: List<MediaItem>, onMediaClick: (MediaItem) -> Unit,
     onFavoriteToggle: (Long) -> Unit,
 ) {
+    var menuItem by remember { mutableStateOf<MediaItem?>(null) }
+    var propertiesItem by remember { mutableStateOf<MediaItem?>(null) }
+
     LazyColumn(contentPadding = PaddingValues(vertical = 4.dp), modifier = Modifier.fillMaxSize()) {
         items(items = items, key = { it.id }) { item ->
             VideoCardList(
                 item = item,
                 onClick = { onMediaClick(item) },
                 onFavoriteToggle = { onFavoriteToggle(item.id) },
+                onMoreClick = { menuItem = item },
             )
             HorizontalDivider(
                 modifier = Modifier.padding(start = 148.dp), thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
             )
         }
+    }
+    menuItem?.let { item ->
+        VideoOptionsMenu(
+            item = item, expanded = true, onDismiss = { menuItem = null },
+            onPlay = { onMediaClick(item) },
+            onToggleFavorite = { onFavoriteToggle(item.id) },
+            onAddToPlaylist = { },
+            onProperties = { propertiesItem = item; menuItem = null },
+        )
+    }
+    propertiesItem?.let { item ->
+        VideoPropertiesDialog(item = item, onDismiss = { propertiesItem = null })
     }
 }
 

@@ -8,4 +8,6 @@
     <color name="ryou_surface_dark">#1C1B1F</color>
     <color name="ryou_background">#FFFBFE</color>
     <color name="ryou_player_bg">#000000</color>
+    <!-- Launcher icon background - matches image cream background -->
+    <color name="ic_launcher_background">#FFF5E6</color>
 </resources>

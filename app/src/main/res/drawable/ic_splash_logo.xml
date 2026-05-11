@@ -1,29 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder - app uses PNG mipmap icons -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <!-- Background circle -->
     <path
-        android:fillColor="#6750A4"
-        android:pathData="M54,54m-54,0a54,54 0,1 1,108 0a54,54 0,1 1,-108 0" />
-
-    <!-- Play button triangle -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M42,32L42,76L76,54Z" />
-
-    <!-- Decorative arc lines (stylized R) -->
-    <path
-        android:strokeColor="#D0BCFF"
-        android:strokeWidth="2.5"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M70,36 Q82,54 70,72" />
-    <path
-        android:strokeColor="#D0BCFF"
-        android:strokeWidth="2"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M74,40 Q88,54 74,68" />
+        android:fillColor="#FFF5E6"
+        android:pathData="M0,0h108v108H0z"/>
 </vector>

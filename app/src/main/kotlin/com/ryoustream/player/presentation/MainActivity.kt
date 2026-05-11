@@ -25,41 +25,40 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    // ThemeViewModel lives at Activity scope so theme persists across navigation
     private val themeViewModel: ThemeViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        // enableEdgeToEdge BEFORE setContent — sets window flags properly
         enableEdgeToEdge()
 
         val startDestination = resolveStartDestination(intent)
 
         setContent {
-            // Observe live theme settings from DataStore
             val themeState by themeViewModel.themeState.collectAsStateWithLifecycle()
-            val systemDark = isSystemInDarkTheme()
+            val systemDark  = isSystemInDarkTheme()
 
             val isDark = when (themeState.themeMode) {
-                "DARK" -> true
+                "DARK"  -> true
                 "LIGHT" -> false
-                else -> systemDark   // "SYSTEM"
+                else    -> systemDark
             }
 
             RyouPlayerTheme(
-                darkTheme = isDark,
+                darkTheme    = isDark,
                 dynamicColor = themeState.useDynamicColor,
-                amoledMode = themeState.amoledMode,
+                amoledMode   = themeState.amoledMode,
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
+                    color    = MaterialTheme.colorScheme.background,
                 ) {
                     PermissionScreen(
                         onPermissionsGranted = {
                             val navController = rememberNavController()
                             RyouNavGraph(
-                                navController = navController,
+                                navController    = navController,
                                 startDestination = startDestination,
                             )
                         }

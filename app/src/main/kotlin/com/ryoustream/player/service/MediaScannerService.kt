@@ -43,7 +43,7 @@ class MediaScannerService : LifecycleService() {
         return NotificationCompat.Builder(this, RyouPlayerApp.CHANNEL_SCANNER)
             .setContentTitle("Ryou Player")
             .setContentText("Scanning media library…")
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
