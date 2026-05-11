@@ -94,8 +94,8 @@ fun PlayerScreen(
     }
 
     // ── Orientation handling ────────────────────────────────────────────────
-    val videoWidth  = state.playbackState.mediaItem?.width  ?: 0
-    val videoHeight = state.playbackState.mediaItem?.height ?: 0
+    val videoWidth  = state.videoWidth.takeIf { it > 0 } ?: (state.playbackState.mediaItem?.width  ?: 0)
+    val videoHeight = state.videoHeight.takeIf { it > 0 } ?: (state.playbackState.mediaItem?.height ?: 0)
     LaunchedEffect(state.orientationMode, videoWidth, videoHeight) {
         activity?.requestedOrientation = when (state.orientationMode) {
             OrientationMode.AUTO ->
@@ -213,7 +213,7 @@ fun PlayerScreen(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
-                    resizeMode    = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    subtitleView?.visibility = android.view.View.GONE
                 }
             },
             update = { view ->
@@ -224,12 +224,16 @@ fun PlayerScreen(
                     AspectRatioMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                     else                    -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
+                // Show ExoPlayer's built-in subtitle for embedded tracks only
+                view.subtitleView?.visibility = if (
+                    state.subtitleEnabled && state.selectedSubtitleTrack >= 0
+                ) android.view.View.VISIBLE else android.view.View.GONE
             },
             modifier = Modifier.fillMaxSize(),
         )
 
-        // ── ASS/Custom Subtitle overlay ───────────────────────────────────
-        if (state.subtitleEnabled && state.subtitleCues.isNotEmpty()) {
+        // ── ASS/Custom Subtitle overlay (external only) ───────────────────────
+        if (state.subtitleEnabled && state.subtitleCues.isNotEmpty() && state.selectedSubtitleTrack == -1) {
             val adjustedMs = state.playbackState.currentPosition + state.subtitleDelay
             AssSubtitleRenderer(
                 cues        = state.subtitleCues,
@@ -289,8 +293,8 @@ fun PlayerScreen(
         // ── Player Controls ───────────────────────────────────────────────
         AnimatedVisibility(
             visible = state.showControls && !isDraggingSeek,
-            enter   = fadeIn(tween(200)),
-            exit    = fadeOut(tween(300)),
+            enter   = fadeIn(tween(150)),
+            exit    = fadeOut(tween(150)),
         ) {
             PlayerControls(
                 state     = state,

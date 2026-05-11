@@ -139,7 +139,7 @@
         <activity
             android:name=".presentation.player.PlayerActivity"
             android:exported="false"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="unspecified"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
             android:supportsPictureInPicture="true"
             android:launchMode="singleTop"

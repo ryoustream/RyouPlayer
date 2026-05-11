@@ -57,9 +57,11 @@ data class PlayerUiState(
     val showControls: Boolean                 = true,
     val isLocked: Boolean                     = false,
     val aspectRatioMode: AspectRatioMode      = AspectRatioMode.FIT,
-    val orientationMode: OrientationMode      = OrientationMode.AUTO,
+    val orientationMode: OrientationMode      = OrientationMode.SENSOR_VIDEO,
     val brightnessLevel: Float                = -1f, // -1 = system default
     val volumeLevel: Float                    = 1f,
+    val videoWidth: Int                       = 0,
+    val videoHeight: Int                      = 0,
     // Subtitle
     val subtitleEnabled: Boolean              = true,
     val subtitleCues: List<AssCue>            = emptyList(),
@@ -155,6 +157,14 @@ class PlayerViewModel @Inject constructor(
         }
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             updatePlayback()
+        }
+        override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+            if (videoSize.width > 0 && videoSize.height > 0) {
+                _state.update { it.copy(
+                    videoWidth  = videoSize.width,
+                    videoHeight = videoSize.height,
+                )}
+            }
         }
     }
 
@@ -255,6 +265,8 @@ class PlayerViewModel @Inject constructor(
                 androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, info.trackIndex)
             )
             .build()
+        // Ensure player volume is not 0
+        if (player.volume == 0f) player.volume = 1f
         _state.update { it.copy(
             selectedAudioTrack = info.index,
             audioTracks = it.audioTracks.map { t -> t.copy(isSelected = t.index == info.index) }
@@ -407,7 +419,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun setBrightness(level: Float) { _state.update { it.copy(brightnessLevel = level.coerceIn(0.01f, 1f)) } }
-    fun setVolume(level: Float)     { _state.update { it.copy(volumeLevel = level.coerceIn(0f, 1f)) } }
+    fun setVolume(level: Float) {
+        val clamped = level.coerceIn(0f, 1f)
+        _player.value?.volume = clamped
+        _state.update { it.copy(volumeLevel = clamped) }
+    }
 
     // ─── Panels ───────────────────────────────────────────────────────────────
     fun showSubtitlePanel()     { _state.update { it.copy(showSubtitlePanel = true, showControls = true) } }
@@ -451,7 +467,7 @@ class PlayerViewModel @Inject constructor(
                         ))
                     }
                 }
-                delay(250L)
+                delay(500L)
             }
         }
     }

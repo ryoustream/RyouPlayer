@@ -22,7 +22,7 @@ data class HomeUiState(
     val favoriteVideos: List<MediaItem> = emptyList(),
     val folders: List<MediaFolder> = emptyList(),
     val searchQuery: String = "",
-    val sortOrder: MediaSortOrder = MediaSortOrder.DATE_ADDED_DESC,
+    val sortOrder: MediaSortOrder = MediaSortOrder.NAME_ASC,
     val viewMode: ViewMode = ViewMode.GRID,
     val selectedTab: HomeTab = HomeTab.ALL,
     val error: String? = null,
@@ -51,7 +51,7 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private val searchQuery = MutableStateFlow("")
-    private val sortOrder = MutableStateFlow(MediaSortOrder.DATE_ADDED_DESC)
+    private val sortOrder = MutableStateFlow(MediaSortOrder.NAME_ASC)
 
     init {
         loadAllVideos()
