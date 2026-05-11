@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import com.ryoustream.player.domain.model.AspectRatioMode
 import com.ryoustream.player.domain.model.MediaItem as DomainMediaItem
 import com.ryoustream.player.domain.model.RepeatMode
@@ -213,7 +214,11 @@ fun PlayerScreen(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
-                    subtitleView?.visibility = android.view.View.GONE
+                    // Keep SubtitleView visible — ExoPlayer renders ASS/SSA/SRT natively
+                    // including fonts, animations, positioning from MKV embedded tracks
+                    subtitleView?.apply {
+                        setFractionalTextSize(androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 1.1f)
+                    }
                 }
             },
             update = { view ->
@@ -224,7 +229,8 @@ fun PlayerScreen(
                     AspectRatioMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                     else                    -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
-                // Show ExoPlayer's built-in subtitle for embedded tracks only
+                // Show SubtitleView when embedded track selected OR subtitle enabled
+                // Hide only when user explicitly disabled subtitles (Off)
                 view.subtitleView?.visibility = if (
                     state.subtitleEnabled && state.selectedSubtitleTrack >= 0
                 ) android.view.View.VISIBLE else android.view.View.GONE
@@ -232,7 +238,9 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        // ── ASS/Custom Subtitle overlay (external only) ───────────────────────
+        // ── ASS/Custom Subtitle overlay (external .ass/.srt only) ────────────
+        // Only used for externally loaded subtitle files, NOT for embedded MKV tracks
+        // (those are rendered natively by ExoPlayer's SubtitleView above)
         if (state.subtitleEnabled && state.subtitleCues.isNotEmpty() && state.selectedSubtitleTrack == -1) {
             val adjustedMs = state.playbackState.currentPosition + state.subtitleDelay
             AssSubtitleRenderer(

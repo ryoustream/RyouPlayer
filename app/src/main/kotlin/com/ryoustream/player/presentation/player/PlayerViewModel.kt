@@ -177,7 +177,11 @@ class PlayerViewModel @Inject constructor(
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build()
-            .also { it.addListener(playerListener) }
+            .also {
+                it.addListener(playerListener)
+                // Ensure volume is at max on init
+                it.volume = 1f
+            }
         _player.value = exo
     }
 
@@ -276,7 +280,7 @@ class PlayerViewModel @Inject constructor(
     fun selectSubtitleTrack(info: TrackInfo?) {
         val player = _player.value ?: return
         if (info == null) {
-            // Disable subtitles
+            // Disable ALL subtitles
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
                 .setDisabledTrackTypes(setOf(C.TRACK_TYPE_TEXT))
@@ -295,6 +299,7 @@ class PlayerViewModel @Inject constructor(
         _state.update { it.copy(
             subtitleEnabled       = true,
             selectedSubtitleTrack = info.index,
+            subtitleCues          = emptyList(), // clear external cues when embedded selected
             subtitleTracks = it.subtitleTracks.map { t -> t.copy(isSelected = t.index == info.index) }
         )}
     }

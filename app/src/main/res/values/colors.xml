@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="splash_background">#1C1B1F</color>
-    <color name="ryou_primary">#6750A4</color>
-    <color name="ryou_primary_dark">#D0BCFF</color>
-    <color name="ryou_secondary">#625B71</color>
-    <color name="ryou_accent">#7C4DFF</color>
-    <color name="ryou_surface_dark">#1C1B1F</color>
-    <color name="ryou_background">#FFFBFE</color>
+    <color name="splash_background">#0F1923</color>
+    <color name="ryou_primary">#4A7EC7</color>
+    <color name="ryou_primary_dark">#90BBF0</color>
+    <color name="ryou_secondary">#4E6B94</color>
+    <color name="ryou_accent">#3A6DB5</color>
+    <color name="ryou_surface_dark">#141E2B</color>
+    <color name="ryou_background">#FEF9ED</color>
     <color name="ryou_player_bg">#000000</color>
-    <!-- Launcher icon background - matches image cream background -->
-    <color name="ic_launcher_background">#FFF5E6</color>
+    <!-- Launcher icon background - krem dari gambar icon -->
+    <color name="ic_launcher_background">#FEF9ED</color>
 </resources>

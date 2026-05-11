@@ -12,52 +12,52 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
-val RyouPrimary      = Color(0xFF6750A4)
-val RyouPrimaryDark  = Color(0xFFD0BCFF)
-val RyouAccent       = Color(0xFF7C4DFF)
+val RyouPrimary      = Color(0xFF4A7EC7)   // Biru icon play button
+val RyouPrimaryDark  = Color(0xFF90BBF0)   // Biru terang untuk dark mode
+val RyouAccent       = Color(0xFF3A6DB5)   // Biru lebih gelap untuk aksen
 
 private val DarkColorScheme = darkColorScheme(
-    primary             = Color(0xFFD0BCFF),
-    onPrimary           = Color(0xFF381E72),
-    primaryContainer    = Color(0xFF4F378B),
-    onPrimaryContainer  = Color(0xFFEADDFF),
-    secondary           = Color(0xFFCCC2DC),
-    onSecondary         = Color(0xFF332D41),
-    secondaryContainer  = Color(0xFF4A4458),
-    onSecondaryContainer= Color(0xFFE8DEF8),
-    background          = Color(0xFF1C1B1F),
-    onBackground        = Color(0xFFE6E1E5),
-    surface             = Color(0xFF1C1B1F),
-    onSurface           = Color(0xFFE6E1E5),
-    surfaceVariant      = Color(0xFF49454F),
-    onSurfaceVariant    = Color(0xFFCAC4D0),
-    outline             = Color(0xFF938F99),
+    primary             = Color(0xFF90BBF0),   // biru cerah
+    onPrimary           = Color(0xFF003063),
+    primaryContainer    = Color(0xFF254E89),
+    onPrimaryContainer  = Color(0xFFD4E4FF),
+    secondary           = Color(0xFFB4C8E8),
+    onSecondary         = Color(0xFF1E3254),
+    secondaryContainer  = Color(0xFF324D73),
+    onSecondaryContainer= Color(0xFFD4E4FF),
+    background          = Color(0xFF0F1923),   // navy gelap
+    onBackground        = Color(0xFFE2EAF5),
+    surface             = Color(0xFF141E2B),
+    onSurface           = Color(0xFFE2EAF5),
+    surfaceVariant      = Color(0xFF243347),
+    onSurfaceVariant    = Color(0xFFB8CAE0),
+    outline             = Color(0xFF4A6482),
     error               = Color(0xFFCF6679),
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary             = Color(0xFF6750A4),
+    primary             = Color(0xFF4A7EC7),   // biru icon
     onPrimary           = Color(0xFFFFFFFF),
-    primaryContainer    = Color(0xFFEADDFF),
-    onPrimaryContainer  = Color(0xFF21005D),
-    secondary           = Color(0xFF625B71),
+    primaryContainer    = Color(0xFFD4E4FF),
+    onPrimaryContainer  = Color(0xFF002A5C),
+    secondary           = Color(0xFF4E6B94),
     onSecondary         = Color(0xFFFFFFFF),
-    secondaryContainer  = Color(0xFFE8DEF8),
-    onSecondaryContainer= Color(0xFF1D192B),
-    background          = Color(0xFFFFFBFE),
-    onBackground        = Color(0xFF1C1B1F),
-    surface             = Color(0xFFFFFBFE),
-    onSurface           = Color(0xFF1C1B1F),
-    surfaceVariant      = Color(0xFFE7E0EC),
-    onSurfaceVariant    = Color(0xFF49454F),
-    outline             = Color(0xFF79747E),
+    secondaryContainer  = Color(0xFFD4E4FF),
+    onSecondaryContainer= Color(0xFF07213F),
+    background          = Color(0xFFFEF9ED),   // krem dari icon
+    onBackground        = Color(0xFF1A1C1E),
+    surface             = Color(0xFFFEF9ED),
+    onSurface           = Color(0xFF1A1C1E),
+    surfaceVariant      = Color(0xFFE8F0FA),
+    onSurfaceVariant    = Color(0xFF3A4A5C),
+    outline             = Color(0xFF7A9ABB),
     error               = Color(0xFFB3261E),
 )
 
 private val AmoledColorScheme = DarkColorScheme.copy(
     background    = Color.Black,
     surface       = Color.Black,
-    surfaceVariant= Color(0xFF111111),
+    surfaceVariant= Color(0xFF0D1520),
 )
 
 @Composable
