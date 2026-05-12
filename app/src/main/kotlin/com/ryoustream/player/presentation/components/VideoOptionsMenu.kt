@@ -45,7 +45,7 @@ fun VideoOptionsMenu(
         )
         DropdownMenuItem(
             text        = { Text("Add to Playlist") },
-            leadingIcon = { Icon(Icons.Outlined.PlaylistAdd, null) },
+            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, null) },
             onClick     = { onAddToPlaylist(); onDismiss() },
         )
         DropdownMenuItem(

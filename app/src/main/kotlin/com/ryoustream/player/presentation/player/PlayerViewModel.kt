@@ -265,11 +265,11 @@ class PlayerViewModel @Inject constructor(
         val group  = player.currentTracks.groups.getOrNull(info.groupIndex) ?: return
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
             .setOverrideForType(
-                androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, info.trackIndex)
+                androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, listOf(info.trackIndex))
             )
             .build()
-        // Ensure player volume is not 0
         if (player.volume == 0f) player.volume = 1f
         _state.update { it.copy(
             selectedAudioTrack = info.index,
@@ -285,15 +285,21 @@ class PlayerViewModel @Inject constructor(
                 .buildUpon()
                 .setDisabledTrackTypes(setOf(C.TRACK_TYPE_TEXT))
                 .build()
-            _state.update { it.copy(subtitleEnabled = false, selectedSubtitleTrack = -1) }
+            _state.update { it.copy(
+                subtitleEnabled       = false,
+                selectedSubtitleTrack = -1,
+                subtitleCues          = emptyList(),
+                subtitleTracks = it.subtitleTracks.map { t -> t.copy(isSelected = false) }
+            )}
             return
         }
         val group = player.currentTracks.groups.getOrNull(info.groupIndex) ?: return
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
             .setDisabledTrackTypes(emptySet())
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .setOverrideForType(
-                androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, info.trackIndex)
+                androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, listOf(info.trackIndex))
             )
             .build()
         _state.update { it.copy(
@@ -361,6 +367,21 @@ class PlayerViewModel @Inject constructor(
 
     fun toggleSubtitle() {
         _state.update { it.copy(subtitleEnabled = !it.subtitleEnabled) }
+    }
+
+    // Switch to external subtitle cues (disable embedded track selection)
+    fun enableExternalSubtitle() {
+        val player = _player.value
+        // Disable embedded text tracks so they don't overlap
+        player?.trackSelectionParameters = player?.trackSelectionParameters
+            ?.buildUpon()
+            ?.setDisabledTrackTypes(setOf(C.TRACK_TYPE_TEXT))
+            ?.build() ?: return
+        _state.update { it.copy(
+            subtitleEnabled       = true,
+            selectedSubtitleTrack = -1,
+            subtitleTracks        = it.subtitleTracks.map { t -> t.copy(isSelected = false) }
+        )}
     }
 
     // ─── Playback Controls ────────────────────────────────────────────────────

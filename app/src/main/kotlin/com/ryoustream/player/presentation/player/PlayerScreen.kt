@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
@@ -19,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -87,9 +90,14 @@ fun PlayerScreen(
         }
         onDispose {
             activity?.let { act ->
-                WindowCompat.setDecorFitsSystemWindows(act.window, true)
-                WindowInsetsControllerCompat(act.window, act.window.decorView)
-                    .show(WindowInsetsCompat.Type.systemBars())
+                // Restore to edge-to-edge (MainActivity uses enableEdgeToEdge)
+                // DO NOT set decorFitsSystemWindows(true) — that breaks insets/header
+                WindowInsetsControllerCompat(act.window, act.window.decorView).apply {
+                    show(WindowInsetsCompat.Type.systemBars())
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                }
+                // Re-apply edge-to-edge so insets are correct when returning to HomeScreen
+                androidx.activity.enableEdgeToEdge(act)
             }
         }
     }
@@ -229,19 +237,20 @@ fun PlayerScreen(
                     AspectRatioMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                     else                    -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
-                // Show SubtitleView when embedded track selected OR subtitle enabled
-                // Hide only when user explicitly disabled subtitles (Off)
-                view.subtitleView?.visibility = if (
-                    state.subtitleEnabled && state.selectedSubtitleTrack >= 0
-                ) android.view.View.VISIBLE else android.view.View.GONE
+                // SubtitleView handles embedded tracks (MKV ASS/SSA/SRT natively)
+                // Show when: subtitle enabled AND an embedded track is selected (index >= 0)
+                // Hide when: subtitle off, or using external cue renderer (index == -1)
+                val showEmbedded = state.subtitleEnabled && state.selectedSubtitleTrack >= 0
+                view.subtitleView?.visibility =
+                    if (showEmbedded) android.view.View.VISIBLE else android.view.View.GONE
             },
             modifier = Modifier.fillMaxSize(),
         )
 
-        // ── ASS/Custom Subtitle overlay (external .ass/.srt only) ────────────
-        // Only used for externally loaded subtitle files, NOT for embedded MKV tracks
-        // (those are rendered natively by ExoPlayer's SubtitleView above)
-        if (state.subtitleEnabled && state.subtitleCues.isNotEmpty() && state.selectedSubtitleTrack == -1) {
+        // ── External subtitle overlay (AssSubtitleRenderer) ──────────────────
+        // Used ONLY when external .ass/.srt cues are loaded
+        // Embedded MKV tracks are handled by SubtitleView above
+        if (state.subtitleEnabled && state.subtitleCues.isNotEmpty()) {
             val adjustedMs = state.playbackState.currentPosition + state.subtitleDelay
             AssSubtitleRenderer(
                 cues        = state.subtitleCues,
@@ -619,7 +628,7 @@ private fun SubtitlePanel(
                 headlineContent = { Text("Off") },
                 leadingContent  = {
                     RadioButton(
-                        selected = !state.subtitleEnabled || state.selectedSubtitleTrack == -1,
+                        selected = !state.subtitleEnabled,
                         onClick  = { viewModel.selectSubtitleTrack(null) },
                     )
                 },
@@ -653,11 +662,11 @@ private fun SubtitlePanel(
                     headlineContent = { Text("External file (${state.subtitleCues.size} cues)") },
                     leadingContent  = {
                         RadioButton(
-                            selected = state.subtitleEnabled && state.selectedSubtitleTrack == -1 && state.subtitleCues.isNotEmpty(),
-                            onClick  = { viewModel.toggleSubtitle() },
+                            selected = state.subtitleEnabled && state.subtitleCues.isNotEmpty(),
+                            onClick  = { viewModel.enableExternalSubtitle() },
                         )
                     },
-                    modifier = Modifier.clickable { viewModel.toggleSubtitle() },
+                    modifier = Modifier.clickable { viewModel.enableExternalSubtitle() },
                 )
             }
 
