@@ -3,6 +3,8 @@ package com.ryoustream.player.presentation.home
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +13,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -23,10 +27,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -55,14 +62,17 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val topAppBarState = rememberTopAppBarState()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
-    // Reset scroll state every time this screen is composed (e.g. after returning from player)
-    LaunchedEffect(Unit) {
-        topAppBarState.heightOffset = 0f
-        topAppBarState.contentOffset = 0f
-    }
     var showSortMenu by remember { mutableStateOf(false) }
+    var searchExpanded by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    // Collapse search when query cleared externally
+    LaunchedEffect(uiState.searchQuery) {
+        if (uiState.searchQuery.isEmpty() && searchExpanded) {
+            // keep expanded — user may still be typing
+        }
+    }
 
     val displayVideos = when {
         folderId != null -> uiState.videos.filter { it.folderId == folderId }
@@ -73,68 +83,118 @@ fun HomeScreen(
     }
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = {
-                    Text(
-                        text = when {
-                            uiState.searchQuery.isNotEmpty() -> "${uiState.videos.size} results"
-                            folderTitle != null -> folderTitle
-                            else -> "Ryou Player"
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    AnimatedVisibility(
+                        visible = !searchExpanded,
+                        enter = fadeIn() + expandHorizontally(),
+                        exit = fadeOut() + shrinkHorizontally(),
+                    ) {
+                        Text(
+                            text = when {
+                                folderTitle != null -> folderTitle
+                                else -> "Ryou Player"
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    AnimatedVisibility(
+                        visible = searchExpanded,
+                        enter = fadeIn() + expandHorizontally(),
+                        exit = fadeOut() + shrinkHorizontally(),
+                    ) {
+                        TextField(
+                            value = uiState.searchQuery,
+                            onValueChange = viewModel::onSearchQueryChange,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester),
+                            placeholder = { Text("Search videos…", style = MaterialTheme.typography.bodyMedium) },
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                        )
+                        LaunchedEffect(searchExpanded) {
+                            if (searchExpanded) focusRequester.requestFocus()
+                        }
+                    }
                 },
                 navigationIcon = {
-                    if (onBack != null) {
+                    if (onBack != null && !searchExpanded) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
                 actions = {
-                    if (uiState.selectedTab != HomeTab.FOLDERS) {
+                    // Search icon — expands inline
+                    if (searchExpanded) {
+                        IconButton(onClick = {
+                            searchExpanded = false
+                            viewModel.clearSearch()
+                            keyboard?.hide()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close search")
+                        }
+                    } else {
+                        IconButton(onClick = { searchExpanded = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+                    }
+
+                    // View-mode toggle (not in search / folders tab)
+                    if (!searchExpanded && uiState.selectedTab != HomeTab.FOLDERS) {
                         IconButton(onClick = { viewModel.onViewModeToggle() }) {
                             Icon(
                                 imageVector = if (uiState.viewMode == ViewMode.GRID)
-                                    Icons.Default.ViewList else Icons.Default.GridView,
+                                    Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                                 contentDescription = "Toggle view",
                             )
                         }
                     }
-                    Box {
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Default.Sort, contentDescription = "Sort")
-                        }
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false },
-                        ) {
-                            MediaSortOrder.values().forEach { order ->
-                                DropdownMenuItem(
-                                    text = { Text(order.label) },
-                                    leadingIcon = {
-                                        if (uiState.sortOrder == order)
-                                            Icon(Icons.Default.Check, null)
-                                    },
-                                    onClick = {
-                                        viewModel.onSortOrderChange(order)
-                                        showSortMenu = false
-                                    },
-                                )
+
+                    // Sort menu
+                    if (!searchExpanded) {
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                            ) {
+                                MediaSortOrder.values().forEach { order ->
+                                    DropdownMenuItem(
+                                        text = { Text(order.label) },
+                                        leadingIcon = {
+                                            if (uiState.sortOrder == order)
+                                                Icon(Icons.Default.Check, null)
+                                        },
+                                        onClick = {
+                                            viewModel.onSortOrderChange(order)
+                                            showSortMenu = false
+                                        },
+                                    )
+                                }
                             }
                         }
-                    }
-                    IconButton(onClick = { viewModel.onRescanMedia() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Rescan")
-                    }
-                    IconButton(onClick = onSettingsClick) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        IconButton(onClick = { viewModel.onRescanMedia() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Rescan")
+                        }
+                        IconButton(onClick = onSettingsClick) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
                     }
                 },
-                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(),
             )
         },
     ) { innerPadding ->
@@ -143,31 +203,8 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            // Search
-            OutlinedTextField(
-                value = uiState.searchQuery,
-                onValueChange = viewModel::onSearchQueryChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Search videos…") },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                trailingIcon = {
-                    AnimatedVisibility(
-                        visible = uiState.searchQuery.isNotEmpty(),
-                        enter = fadeIn(), exit = fadeOut(),
-                    ) {
-                        IconButton(onClick = viewModel::clearSearch) {
-                            Icon(Icons.Default.Close, null)
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = MaterialTheme.shapes.extraLarge,
-            )
-
-            // Tabs
-            if (folderId == null && uiState.searchQuery.isEmpty()) {
+            // Tabs (not when searching or inside folder)
+            if (folderId == null && uiState.searchQuery.isEmpty() && !searchExpanded) {
                 ScrollableTabRow(
                     selectedTabIndex = uiState.selectedTab.ordinal,
                     edgePadding = 16.dp,
@@ -323,7 +360,6 @@ private fun VideoGrid(
             )
         }
     }
-    // 3-dot menu
     menuItem?.let { item ->
         VideoOptionsMenu(
             item = item,

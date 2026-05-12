@@ -147,9 +147,13 @@ class MediaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun rescanMedia() = withContext(Dispatchers.IO) {
-        // Trigger MediaStore rescan via broadcast
-        context.sendBroadcast(
-            android.content.Intent(android.content.Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+        // Trigger MediaStore rescan via MediaScannerConnection (ACTION_MEDIA_SCANNER_SCAN_FILE deprecated)
+        val externalRoot = android.os.Environment.getExternalStorageDirectory().absolutePath
+        android.media.MediaScannerConnection.scanFile(
+            context,
+            arrayOf(externalRoot),
+            null,
+            null,
         )
     }
 

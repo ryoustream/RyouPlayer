@@ -111,6 +111,9 @@ interface SettingsRepository {
     val showVideoThumbnails: Flow<Boolean>
     val animationsEnabled: Flow<Boolean>
 
+    // Display
+    val ignoreNotch: Flow<Boolean>
+
     // Advanced
     val networkBufferSize: Flow<Int>
     val cacheSize: Flow<Int>
@@ -139,5 +142,6 @@ interface SettingsRepository {
     suspend fun setCacheSize(size: Int)
     suspend fun setCodecPreference(codec: String)
     suspend fun setDebugInfo(enabled: Boolean)
+    suspend fun setIgnoreNotch(enabled: Boolean)
     suspend fun resetToDefaults()
 }

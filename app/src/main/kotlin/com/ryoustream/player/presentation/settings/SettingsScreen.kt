@@ -47,6 +47,7 @@ data class SettingsUiState(
     val amoledMode: Boolean = false,
     val useSystemColor: Boolean = true,
     val animationsEnabled: Boolean = true,
+    val ignoreNotch: Boolean = false,
     // Advanced
     val networkBuffer: Int = 32,
     val cacheSize: Int = 256,
@@ -120,6 +121,11 @@ class SettingsViewModel @Inject constructor(
                 }
             }.collect()
         }
+        viewModelScope.launch {
+            settingsRepository.ignoreNotch.collect { v ->
+                _uiState.update { it.copy(ignoreNotch = v) }
+            }
+        }
     }
 
     fun setHardwareDecoding(v: Boolean) = viewModelScope.launch { settingsRepository.setHardwareDecoding(v) }
@@ -134,6 +140,7 @@ class SettingsViewModel @Inject constructor(
     fun setAmoledMode(v: Boolean) = viewModelScope.launch { settingsRepository.setAmoledMode(v) }
     fun setUseSystemColor(v: Boolean) = viewModelScope.launch { settingsRepository.setUseSystemColor(v) }
     fun setAnimations(v: Boolean) = viewModelScope.launch { settingsRepository.setAnimationsEnabled(v) }
+    fun setIgnoreNotch(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNotch(v) }
     fun setDebugInfo(v: Boolean) = viewModelScope.launch { settingsRepository.setDebugInfo(v) }
     fun resetDefaults() = viewModelScope.launch { settingsRepository.resetToDefaults() }
 }
@@ -156,7 +163,7 @@ fun SettingsScreen(
                 title = { Text("Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
             )
@@ -237,7 +244,7 @@ fun SettingsScreen(
             }
             item {
                 SwitchSetting(
-                    icon = Icons.Default.VolumeUp,
+                    icon = Icons.AutoMirrored.Filled.VolumeUp,
                     title = "Volume Gesture",
                     subtitle = "Vertical swipe on right side",
                     checked = s.gestureVolume,
@@ -285,6 +292,15 @@ fun SettingsScreen(
                     subtitle = "Enable UI transition animations",
                     checked = s.animationsEnabled,
                     onCheckedChange = viewModel::setAnimations,
+                )
+            }
+            item {
+                SwitchSetting(
+                    icon = Icons.Default.PhoneAndroid,
+                    title = "Ignore Notch / Display Cutout",
+                    subtitle = "Extend player behind notch/hole-punch (full-screen video)",
+                    checked = s.ignoreNotch,
+                    onCheckedChange = viewModel::setIgnoreNotch,
                 )
             }
 

@@ -6,10 +6,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 val RyouPrimary      = Color(0xFF4A7EC7)   // Biru icon play button
@@ -87,13 +85,9 @@ fun RyouPlayerTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // Transparent bars — Compose draws behind them via enableEdgeToEdge()
-            window.statusBarColor  = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-
-            // FIX: Set icon colors correctly based on actual theme
+            // Transparent bars are handled by enableEdgeToEdge() called in each Activity.
+            // Setting statusBarColor / navigationBarColor is deprecated on API 35+.
             WindowInsetsControllerCompat(window, view).apply {
-                // Light status bar = dark icons (for light theme)
                 isAppearanceLightStatusBars     = !darkTheme
                 isAppearanceLightNavigationBars = !darkTheme
             }

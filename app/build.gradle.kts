@@ -46,6 +46,7 @@ val signingProps = loadSigningProps()
 android {
     namespace = "com.ryoustream.player"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"  // pinned — matches ubuntu-24.04 runner pre-install
 
     defaultConfig {
         applicationId = "com.ryoustream.player"
@@ -69,6 +70,10 @@ android {
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
             arg("room.incremental", "true")
+        }
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
 
@@ -136,6 +141,8 @@ android {
                 "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
                 "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
                 "-opt-in=kotlinx.coroutines.FlowPreview",
+                // Suppress Media3 UnstableApi opt-in requirement globally — we acknowledge usage
+                "-opt-in=androidx.media3.common.util.UnstableApi",
             )
         }
     }
@@ -149,6 +156,20 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/DEPENDENCIES"
+        }
+        jniLibs {
+            // These libs ship without symbol tables — mark explicitly to suppress strip warning
+            keepDebugSymbols += listOf(
+                "**/libandroidx.graphics.path.so",
+                "**/libdatastore_shared_counter.so",
+            )
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

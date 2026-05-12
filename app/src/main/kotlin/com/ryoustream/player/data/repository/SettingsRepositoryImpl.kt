@@ -54,6 +54,8 @@ class SettingsRepositoryImpl @Inject constructor(
         val CACHE_SIZE = intPreferencesKey("cache_size")
         val CODEC_PREFERENCE = stringPreferencesKey("codec_preference")
         val DEBUG_INFO = booleanPreferencesKey("debug_info")
+        // Display
+        val IGNORE_NOTCH = booleanPreferencesKey("ignore_notch")
     }
 
     // ─── Safe read helper ──────────────────────────────────────────────────────
@@ -90,6 +92,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override val cacheSize = dataStore.readSafely(Keys.CACHE_SIZE, 256)
     override val codecPreference = dataStore.readSafely(Keys.CODEC_PREFERENCE, "AUTO")
     override val debugInfoEnabled = dataStore.readSafely(Keys.DEBUG_INFO, false)
+    override val ignoreNotch = dataStore.readSafely(Keys.IGNORE_NOTCH, false)
 
     // ─── Setters ──────────────────────────────────────────────────────────────
     override suspend fun setHardwareDecoding(enabled: Boolean) = dataStore.set(Keys.HARDWARE_DECODING, enabled)
@@ -114,6 +117,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun setCacheSize(size: Int) = dataStore.set(Keys.CACHE_SIZE, size)
     override suspend fun setCodecPreference(codec: String) = dataStore.set(Keys.CODEC_PREFERENCE, codec)
     override suspend fun setDebugInfo(enabled: Boolean) = dataStore.set(Keys.DEBUG_INFO, enabled)
+    override suspend fun setIgnoreNotch(enabled: Boolean) = dataStore.set(Keys.IGNORE_NOTCH, enabled)
 
     override suspend fun resetToDefaults() {
         dataStore.edit { it.clear() }

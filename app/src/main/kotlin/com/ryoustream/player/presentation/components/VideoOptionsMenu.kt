@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -45,7 +46,7 @@ fun VideoOptionsMenu(
         )
         DropdownMenuItem(
             text        = { Text("Add to Playlist") },
-            leadingIcon = { Icon(Icons.Outlined.PlaylistAdd, null) },
+            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, null) },
             onClick     = { onAddToPlaylist(); onDismiss() },
         )
         DropdownMenuItem(

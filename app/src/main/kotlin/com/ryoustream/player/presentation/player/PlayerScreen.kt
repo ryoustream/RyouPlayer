@@ -49,7 +49,6 @@ import com.ryoustream.player.domain.model.AspectRatioMode
 import com.ryoustream.player.domain.model.MediaItem as DomainMediaItem
 import com.ryoustream.player.domain.model.RepeatMode
 
-@OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
     mediaUri: Uri,
@@ -280,7 +279,7 @@ fun PlayerScreen(
             enter = fadeIn(), exit = fadeOut(),
         ) {
             GestureIndicatorBar(
-                icon  = if (state.volumeLevel > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                icon  = if (state.volumeLevel > 0f) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
                 value = state.volumeLevel,
                 label = "${(state.volumeLevel * 100).toInt()}%",
             )
@@ -398,7 +397,7 @@ private fun PlayerControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, "Back", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
             }
             Text(
                 state.mediaTitle.ifEmpty { pb.mediaItem?.displayName ?: "" },

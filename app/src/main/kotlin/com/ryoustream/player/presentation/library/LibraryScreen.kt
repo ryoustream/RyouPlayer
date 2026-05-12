@@ -211,7 +211,7 @@ private fun PlaylistItem(
                 } else {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                         Icon(
-                            Icons.Default.PlaylistPlay,
+                            Icons.AutoMirrored.Filled.PlaylistPlay,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(28.dp),

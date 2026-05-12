@@ -94,7 +94,6 @@ object NetworkModule {
 @InstallIn(SingletonComponent::class)
 object MediaModule {
 
-    @OptIn(UnstableApi::class)
     @Provides
     @Singleton
     fun provideTrackSelector(@ApplicationContext context: Context): DefaultTrackSelector {

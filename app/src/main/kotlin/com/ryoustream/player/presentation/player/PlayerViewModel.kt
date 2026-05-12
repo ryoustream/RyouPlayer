@@ -283,7 +283,7 @@ class PlayerViewModel @Inject constructor(
             // Disable ALL subtitles
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
-                .setDisabledTrackTypes(setOf(C.TRACK_TYPE_TEXT))
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                 .build()
             _state.update { it.copy(
                 subtitleEnabled       = false,
@@ -296,7 +296,7 @@ class PlayerViewModel @Inject constructor(
         val group = player.currentTracks.groups.getOrNull(info.groupIndex) ?: return
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
-            .setDisabledTrackTypes(emptySet())
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .setOverrideForType(
                 androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, listOf(info.trackIndex))
@@ -375,7 +375,7 @@ class PlayerViewModel @Inject constructor(
         // Disable embedded text tracks so they don't overlap
         player?.trackSelectionParameters = player?.trackSelectionParameters
             ?.buildUpon()
-            ?.setDisabledTrackTypes(setOf(C.TRACK_TYPE_TEXT))
+            ?.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             ?.build() ?: return
         _state.update { it.copy(
             subtitleEnabled       = true,

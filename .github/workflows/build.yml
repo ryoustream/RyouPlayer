@@ -20,6 +20,7 @@ on:
 env:
   JAVA_VERSION: '17'
   GRADLE_TARGET: '8.11.1'
+  NDK_VERSION: '27.2.12479018'
 
 permissions:
   contents: write
@@ -49,6 +50,26 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
+      - name: 🔨 Set up Android NDK ${{ env.NDK_VERSION }}
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          echo "Available NDK versions:"
+          ls "${ANDROID_HOME}/ndk/" 2>/dev/null || echo "(none pre-installed)"
+
+          # Install exact NDK version via sdkmanager
+          echo "y" | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;${NDK_VERSION}" 2>&1 | tail -5 || \
+          echo "⚠️  sdkmanager not available — trying pre-installed NDK"
+
+          # Resolve NDK path (installed or pre-existing)
+          NDK_PATH="${ANDROID_HOME}/ndk/${NDK_VERSION}"
+          if [ ! -d "$NDK_PATH" ]; then
+            NDK_PATH=$(ls -d "${ANDROID_HOME}/ndk/"* 2>/dev/null | sort -V | tail -1)
+          fi
+          echo "Using NDK: ${NDK_PATH}"
+          echo "ANDROID_NDK_ROOT=${NDK_PATH}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=${NDK_PATH}" >> $GITHUB_ENV
+
       - name: 📋 Set build metadata
         id: meta
         run: |
@@ -57,39 +78,35 @@ jobs:
           BUILD_DATE=$(date +'%Y%m%d')
           VERSION_NAME="v1.0.${BUILD_DATE}-build${BUILD_NUMBER}"
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
-          echo "COMMIT_HASH=${COMMIT_HASH}" >> $GITHUB_OUTPUT
-          echo "BUILD_DATE=${BUILD_DATE}" >> $GITHUB_OUTPUT
+          echo "COMMIT_HASH=${COMMIT_HASH}"   >> $GITHUB_OUTPUT
+          echo "BUILD_DATE=${BUILD_DATE}"     >> $GITHUB_OUTPUT
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
-      - name: 🔧 Generate Gradle Wrapper (using system Gradle)
+      - name: 📦 Download libass prebuilt (best-effort)
         run: |
-          # The runner has a pre-installed system Gradle (9.x).
-          # Use it to GENERATE a proper wrapper targeting our required version.
-          # 'gradle wrapper' creates gradle-wrapper.jar + gradlew with correct bootstrapper.
+          chmod +x scripts/download_libass.sh
+          ./scripts/download_libass.sh || echo "⚠️  libass download skipped — stub renderer will be used"
+
+      - name: 🔧 Generate Gradle Wrapper
+        run: |
           echo "System Gradle version:"
           gradle --version | grep "^Gradle"
-
           echo "Generating wrapper for Gradle ${GRADLE_TARGET}..."
           gradle wrapper \
             --gradle-version "${GRADLE_TARGET}" \
             --distribution-type bin
-
           chmod +x gradlew
-
-          echo "✅ Wrapper generated:"
+          echo "✅ Wrapper generated"
           ls -lh gradle/wrapper/
-          echo "Verifying GradleWrapperMain is present:"
-          jar tf gradle/wrapper/gradle-wrapper.jar | grep -i "WrapperMain" || echo "(no direct match, checking all classes)"
-          jar tf gradle/wrapper/gradle-wrapper.jar | head -20
 
-      - name: 🐘 Cache Gradle dependencies
+      - name: 🐘 Cache Gradle + NDK CMake
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
+          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/CMakeLists.txt', 'app/src/main/cpp/**') }}
           restore-keys: |
             ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-
             ${{ runner.os }}-gradle-
@@ -103,7 +120,7 @@ jobs:
             -Dorg.gradle.parallel=true
         env:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
-          COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
+          COMMIT_HASH:  ${{ steps.meta.outputs.COMMIT_HASH }}
 
       - name: 🔍 Run Lint (non-blocking)
         run: |
@@ -113,7 +130,7 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx4g" || true
         env:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
-          COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
+          COMMIT_HASH:  ${{ steps.meta.outputs.COMMIT_HASH }}
 
       - name: 📝 Rename APK
         run: |
@@ -162,6 +179,18 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
+      - name: 🔨 Set up Android NDK ${{ env.NDK_VERSION }}
+        run: |
+          echo "y" | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;${NDK_VERSION}" 2>&1 | tail -5 || true
+          NDK_PATH="${ANDROID_HOME}/ndk/${NDK_VERSION}"
+          if [ ! -d "$NDK_PATH" ]; then
+            NDK_PATH=$(ls -d "${ANDROID_HOME}/ndk/"* 2>/dev/null | sort -V | tail -1)
+          fi
+          echo "Using NDK: ${NDK_PATH}"
+          echo "ANDROID_NDK_ROOT=${NDK_PATH}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=${NDK_PATH}"  >> $GITHUB_ENV
+
       - name: 📋 Set build metadata
         id: meta
         run: |
@@ -170,24 +199,22 @@ jobs:
           BUILD_DATE=$(date +'%Y%m%d')
           VERSION_NAME="v1.0.${BUILD_DATE}-build${BUILD_NUMBER}"
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
-          echo "COMMIT_HASH=${COMMIT_HASH}" >> $GITHUB_OUTPUT
-          echo "BUILD_DATE=${BUILD_DATE}" >> $GITHUB_OUTPUT
+          echo "COMMIT_HASH=${COMMIT_HASH}"   >> $GITHUB_OUTPUT
+          echo "BUILD_DATE=${BUILD_DATE}"     >> $GITHUB_OUTPUT
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
-      - name: 🔧 Generate Gradle Wrapper (using system Gradle)
+      - name: 📦 Download libass prebuilt (best-effort)
         run: |
-          echo "System Gradle version:"
-          gradle --version | grep "^Gradle"
+          chmod +x scripts/download_libass.sh
+          ./scripts/download_libass.sh || echo "⚠️  libass download skipped"
 
-          echo "Generating wrapper for Gradle ${GRADLE_TARGET}..."
+      - name: 🔧 Generate Gradle Wrapper
+        run: |
           gradle wrapper \
             --gradle-version "${GRADLE_TARGET}" \
             --distribution-type bin
-
           chmod +x gradlew
-          echo "✅ Wrapper ready"
-          ls -lh gradle/wrapper/
 
       - name: 🐘 Cache Gradle dependencies
         uses: actions/cache@v4
@@ -195,7 +222,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
+          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/CMakeLists.txt', 'app/src/main/cpp/**') }}
           restore-keys: |
             ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-
             ${{ runner.os }}-gradle-
@@ -207,8 +234,7 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             mkdir -p app/keystore
             echo "$KEYSTORE_BASE64" | base64 --decode > app/keystore/release.keystore
-            SIZE=$(stat -c%s app/keystore/release.keystore)
-            echo "✅ Keystore decoded: ${SIZE} bytes"
+            echo "✅ Keystore decoded: $(stat -c%s app/keystore/release.keystore) bytes"
           else
             echo "⚠️ KEYSTORE_BASE64 not set — APK will be unsigned"
           fi
@@ -216,8 +242,8 @@ jobs:
       - name: 📝 Create signing.properties
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_PASSWORD" ]; then
             cat > signing.properties <<EOF
@@ -227,8 +253,6 @@ jobs:
           keyPassword=${KEY_PASSWORD}
           EOF
             echo "✅ signing.properties created"
-          else
-            echo "⚠️ Signing secrets not configured"
           fi
 
       - name: 🏗️ Build Release APK
@@ -239,12 +263,12 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+HeapDumpOnOutOfMemoryError" \
             -Dorg.gradle.parallel=true
         env:
-          BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
-          COMMIT_HASH: ${{ steps.meta.outputs.COMMIT_HASH }}
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          BUILD_NUMBER:      ${{ steps.meta.outputs.BUILD_NUMBER }}
+          COMMIT_HASH:       ${{ steps.meta.outputs.COMMIT_HASH }}
+          KEYSTORE_BASE64:   ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
 
       - name: 📝 Rename APK
         run: |
