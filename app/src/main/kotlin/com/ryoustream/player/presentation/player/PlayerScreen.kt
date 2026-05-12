@@ -5,7 +5,6 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
@@ -96,8 +95,9 @@ fun PlayerScreen(
                     show(WindowInsetsCompat.Type.systemBars())
                     systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
                 }
-                // Re-apply edge-to-edge so insets are correct when returning to HomeScreen
-                androidx.activity.enableEdgeToEdge(act)
+                // Restore edge-to-edge state (MainActivity uses enableEdgeToEdge)
+                // enableEdgeToEdge is an extension on ComponentActivity, call it on the activity
+                (act as? androidx.activity.ComponentActivity)?.enableEdgeToEdge()
             }
         }
     }
