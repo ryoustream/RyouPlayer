@@ -2,119 +2,101 @@ package com.ryoustream.player.presentation.player
 
 import android.graphics.Bitmap
 import android.util.Log
+import io.github.peerless2012.ass.AssLibrary
+import io.github.peerless2012.ass.AssRenderer
+import io.github.peerless2012.ass.AssTrack
 
 /**
  * AssJniRenderer
  *
- * Kotlin wrapper around the native libass JNI bridge (ass_jni.cpp).
+ * Kotlin wrapper around [peerless2012/libass-android](https://github.com/peerless2012/libass-android).
+ * Maven: `io.github.peerless2012:ass-kt:0.3.0`
  *
- * ## Usage
+ * Uses native libass via JNI for accurate ASS/SSA rendering (karaoke, \clip,
+ * \move, transforms, etc.). Falls back to Kotlin renderer automatically if the
+ * native library fails to load.
+ *
+ * ## Lifecycle
  * ```kotlin
- * val renderer = AssJniRenderer()
- * if (renderer.isAvailable) {
- *     renderer.loadData(subtitleBytes)
- *     renderer.setFrameSize(videoWidth, videoHeight)
- *
- *     val bmp = Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
- *     renderer.renderFrame(positionMs, bmp)   // fills bmp in-place
- *
- *     renderer.destroy()
+ * val r = AssJniRenderer()
+ * if (r.isAvailable) {
+ *     r.loadData(subtitleBytes)
+ *     r.setFrameSize(videoW, videoH)
+ *     val bmp = Bitmap.createBitmap(videoW, videoH, Bitmap.Config.ARGB_8888)
+ *     r.renderFrame(positionMs, bmp)
+ *     r.destroy()
  * }
  * ```
- *
- * ## Prebuilt libass.so
- * The native library must be present in app/src/main/jniLibs/{abi}/libass.so.
- * If missing, [isAvailable] is false and callers should fall back to the
- * pure-Kotlin [AssSubtitleRenderer].
- *
- * Prebuilt download:
- *   https://github.com/bMaximus/libass-android/releases
  */
 class AssJniRenderer {
 
-    /** true when both the JNI bridge (ryouass) and libass are loaded */
     val isAvailable: Boolean
 
-    private var handle: Long = 0L
+    private var library:  AssLibrary?  = null
+    private var renderer: AssRenderer? = null
+    private var track:    AssTrack?    = null
 
     init {
-        isAvailable = tryLoad()
-        if (isAvailable) {
-            handle = nCreate()
-            if (handle == 0L) {
-                Log.e(TAG, "nCreate() returned null handle — renderer unavailable")
-            }
+        isAvailable = try {
+            library  = AssLibrary.create()
+            renderer = library?.createRenderer()
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "libass unavailable — falling back to Kotlin renderer: ${e.message}")
+            false
         }
     }
 
     // ── Public API ─────────────────────────────────────────────────────────
 
     /**
-     * Load subtitle content from raw bytes.
-     * Accepts ASS/SSA formats (libass parses them directly).
+     * Load subtitle content from raw bytes (.ass / .ssa).
      * @return true on success.
      */
     fun loadData(data: ByteArray): Boolean {
-        if (!isAvailable || handle == 0L) return false
-        return nLoadData(handle, data)
+        if (!isAvailable) return false
+        return try {
+            track?.release()
+            track = library?.createTrackFromData(data)
+            track != null
+        } catch (e: Throwable) {
+            Log.e(TAG, "loadData failed: ${e.message}")
+            false
+        }
     }
 
     /**
-     * Set the video frame dimensions — must be called before [renderFrame].
+     * Set video frame size — must be called before [renderFrame].
      */
     fun setFrameSize(width: Int, height: Int) {
-        if (!isAvailable || handle == 0L) return
-        nSetFrameSize(handle, width, height)
+        renderer?.setFrameSize(width, height)
     }
 
     /**
-     * Render subtitle overlay for [positionMs] into [bitmap].
-     * [bitmap] must be ARGB_8888 and sized to the video frame dimensions.
-     *
-     * @return number of ASS_Image segments blended (0 = no active subtitle).
+     * Render the subtitle overlay for [positionMs] into [bitmap] (ARGB_8888).
+     * @return number of subtitle image segments drawn; 0 = no active subtitle.
      */
     fun renderFrame(positionMs: Long, bitmap: Bitmap): Int {
-        if (!isAvailable || handle == 0L) return 0
-        return nRenderFrame(handle, positionMs, bitmap)
+        val r = renderer ?: return 0
+        val t = track    ?: return 0
+        return try {
+            r.renderFrame(t, positionMs, bitmap)
+        } catch (e: Throwable) {
+            Log.e(TAG, "renderFrame error: ${e.message}")
+            0
+        }
     }
 
     /**
      * Release all native resources. Must be called when done.
      */
     fun destroy() {
-        if (!isAvailable || handle == 0L) return
-        nDestroy(handle)
-        handle = 0L
+        track?.release();    track    = null
+        renderer?.release(); renderer = null
+        library?.release();  library  = null
     }
-
-    // ── Native declarations ────────────────────────────────────────────────
-
-    private external fun nCreate(): Long
-    private external fun nDestroy(handle: Long)
-    private external fun nLoadData(handle: Long, data: ByteArray): Boolean
-    private external fun nSetFrameSize(handle: Long, w: Int, h: Int)
-    private external fun nRenderFrame(handle: Long, posMs: Long, bitmap: Bitmap): Int
-
-    // ── Companion ──────────────────────────────────────────────────────────
 
     companion object {
         private const val TAG = "AssJniRenderer"
-
-        /** Cached result of library load attempt */
-        private var loadResult: Boolean? = null
-
-        private fun tryLoad(): Boolean {
-            if (loadResult != null) return loadResult!!
-            loadResult = try {
-                System.loadLibrary("ass")      // prebuilt libass.so
-                System.loadLibrary("ryouass")  // our JNI bridge
-                Log.i(TAG, "libass + ryouass loaded successfully")
-                true
-            } catch (e: UnsatisfiedLinkError) {
-                Log.w(TAG, "libass unavailable — falling back to Kotlin renderer: ${e.message}")
-                false
-            }
-            return loadResult!!
-        }
     }
 }

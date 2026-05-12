@@ -46,7 +46,6 @@ val signingProps = loadSigningProps()
 android {
     namespace = "com.ryoustream.player"
     compileSdk = 35
-    ndkVersion = "27.2.12479018"  // pinned — matches ubuntu-24.04 runner pre-install
 
     defaultConfig {
         applicationId = "com.ryoustream.player"
@@ -72,9 +71,6 @@ android {
             arg("room.incremental", "true")
         }
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
     }
 
     // ─── Signing ──────────────────────────────────────────────────────────────
@@ -166,13 +162,6 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-
     bundle {
         language {
             enableSplit = false
@@ -237,6 +226,10 @@ dependencies {
     implementation(libs.media3.common)
     implementation(libs.media3.datasource)
     implementation(libs.media3.datasource.okhttp)
+
+    // ASS/SSA subtitle rendering — libass via JNI (Maven Central)
+    // https://github.com/peerless2012/libass-android
+    implementation(libs.libass.kt)
 
     // Coroutines
     implementation(libs.coroutines.core)

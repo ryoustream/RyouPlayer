@@ -24,6 +24,7 @@ hiltNavigationCompose = "1.2.0"
 
 # Media3 / ExoPlayer
 media3 = "1.5.1"
+libass-android = "0.3.0"
 
 # Coroutines
 coroutines = "1.9.0"
@@ -106,6 +107,10 @@ media3-datasource = { group = "androidx.media3", name = "media3-datasource", ver
 media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
 media3-transformer = { group = "androidx.media3", name = "media3-transformer", version.ref = "media3" }
 media3-effect = { group = "androidx.media3", name = "media3-effect", version.ref = "media3" }
+
+# libass-android — ASS/SSA subtitle rendering via native libass (Maven Central)
+# https://github.com/peerless2012/libass-android
+libass-kt = { group = "io.github.peerless2012", name = "ass-kt", version.ref = "libass-android" }
 
 # Coroutines
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }

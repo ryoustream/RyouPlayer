@@ -20,7 +20,6 @@ on:
 env:
   JAVA_VERSION: '17'
   GRADLE_TARGET: '8.11.1'
-  NDK_VERSION: '27.2.12479018'
 
 permissions:
   contents: write
@@ -50,25 +49,6 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
-      - name: 🔨 Set up Android NDK ${{ env.NDK_VERSION }}
-        run: |
-          echo "ANDROID_HOME=${ANDROID_HOME}"
-          echo "Available NDK versions:"
-          ls "${ANDROID_HOME}/ndk/" 2>/dev/null || echo "(none pre-installed)"
-
-          # Install exact NDK version via sdkmanager
-          echo "y" | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
-            "ndk;${NDK_VERSION}" 2>&1 | tail -5 || \
-          echo "⚠️  sdkmanager not available — trying pre-installed NDK"
-
-          # Resolve NDK path (installed or pre-existing)
-          NDK_PATH="${ANDROID_HOME}/ndk/${NDK_VERSION}"
-          if [ ! -d "$NDK_PATH" ]; then
-            NDK_PATH=$(ls -d "${ANDROID_HOME}/ndk/"* 2>/dev/null | sort -V | tail -1)
-          fi
-          echo "Using NDK: ${NDK_PATH}"
-          echo "ANDROID_NDK_ROOT=${NDK_PATH}" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=${NDK_PATH}" >> $GITHUB_ENV
 
       - name: 📋 Set build metadata
         id: meta
@@ -100,13 +80,13 @@ jobs:
           echo "✅ Wrapper generated"
           ls -lh gradle/wrapper/
 
-      - name: 🐘 Cache Gradle + NDK CMake
+      - name: 🐘 Cache Gradle dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/CMakeLists.txt', 'app/src/main/cpp/**') }}
+          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
           restore-keys: |
             ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-
             ${{ runner.os }}-gradle-
@@ -179,17 +159,6 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
-      - name: 🔨 Set up Android NDK ${{ env.NDK_VERSION }}
-        run: |
-          echo "y" | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
-            "ndk;${NDK_VERSION}" 2>&1 | tail -5 || true
-          NDK_PATH="${ANDROID_HOME}/ndk/${NDK_VERSION}"
-          if [ ! -d "$NDK_PATH" ]; then
-            NDK_PATH=$(ls -d "${ANDROID_HOME}/ndk/"* 2>/dev/null | sort -V | tail -1)
-          fi
-          echo "Using NDK: ${NDK_PATH}"
-          echo "ANDROID_NDK_ROOT=${NDK_PATH}" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=${NDK_PATH}"  >> $GITHUB_ENV
 
       - name: 📋 Set build metadata
         id: meta
@@ -222,7 +191,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/CMakeLists.txt', 'app/src/main/cpp/**') }}
+          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
           restore-keys: |
             ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-
             ${{ runner.os }}-gradle-
