@@ -1,6 +1,8 @@
 package com.ryoustream.player.di
 
 import android.content.Context
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.ryoustream.player.data.local.MediaPlaybackStateDao
 import com.ryoustream.player.data.local.NetworkStreamDao
 import com.ryoustream.player.data.local.PlaylistDao
@@ -19,6 +21,18 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
+
+// ─── PLAYER MODULE ────────────────────────────────────────────────────────────
+
+@Module
+@InstallIn(SingletonComponent::class)
+object PlayerModule {
+
+    @OptIn(UnstableApi::class)
+    @Provides @Singleton
+    fun provideDefaultTrackSelector(@ApplicationContext context: Context): DefaultTrackSelector =
+        DefaultTrackSelector(context)
+}
 
 // ─── DATABASE MODULE ──────────────────────────────────────────────────────────
 
