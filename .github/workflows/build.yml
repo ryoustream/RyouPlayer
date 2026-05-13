@@ -91,7 +91,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: app/src/main/jniLibs
-          key: mpv-libs-2026-04-25-arm64-v8a
+          key: mpv-libs-2026-04-25-arm64-v8a-v2
 
       - name: 🎬 Download MPV native libs
         if: steps.cache-mpv.outputs.cache-hit != 'true'
@@ -204,7 +204,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: app/src/main/jniLibs
-          key: mpv-libs-2026-04-25-arm64-v8a
+          key: mpv-libs-2026-04-25-arm64-v8a-v2
 
       - name: 🎬 Download MPV native libs
         if: steps.cache-mpv.outputs.cache-hit != 'true'

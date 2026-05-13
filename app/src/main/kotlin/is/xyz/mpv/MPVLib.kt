@@ -7,13 +7,13 @@ import android.view.Surface
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * MPVLib — JNI bridge to libmpv (libplayer-lib.so from mpv-android).
+ * MPVLib — JNI bridge to libmpv (libmpv.so from mpv-android).
  *
  * Package and class name MUST stay `is.xyz.mpv.MPVLib` to match the JNI
- * symbol table baked into the prebuilt `libplayer-lib.so`:
+ * symbol table baked into the prebuilt `libmpv.so`:
  *   Java_is_xyz_mpv_MPVLib_init, Java_is_xyz_mpv_MPVLib_command, …
  *
- * Setup: put `libplayer-lib.so` in app/src/main/jniLibs/arm64-v8a/
+ * Setup: put `libmpv.so` in app/src/main/jniLibs/arm64-v8a/
  * Download: run scripts/download_mpv_libs.sh
  */
 object MPVLib {
@@ -25,10 +25,10 @@ object MPVLib {
 
     init {
         isAvailable = try {
-            System.loadLibrary("player-lib")
+            System.loadLibrary("mpv")
             true
         } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "libplayer-lib.so not found — run scripts/download_mpv_libs.sh then rebuild. ${e.message}")
+            Log.e(TAG, "libmpv.so not found — run scripts/download_mpv_libs.sh then rebuild. ${e.message}")
             false
         }
     }

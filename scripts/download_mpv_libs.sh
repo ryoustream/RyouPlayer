@@ -6,9 +6,8 @@
 # official mpv-android release APK and places it where the app expects it:
 #   app/src/main/jniLibs/arm64-v8a/
 #
-# The APK ships the library as libmpv.so, but this app loads it under
-# the name "player-lib" (System.loadLibrary("player-lib")), so we rename
-# libmpv.so → libplayer-lib.so after extraction.
+# MPVLib.kt loads it via System.loadLibrary("mpv") → libmpv.so directly.
+# No renaming needed.
 #
 # Run once before building:
 #   chmod +x scripts/download_mpv_libs.sh
@@ -31,16 +30,10 @@ echo "▶  Extracting native libs…"
 mkdir -p "${JNI_OUT}"
 unzip -jo "${TMP_DIR}/mpv.apk" "lib/arm64-v8a/*.so" -d "${JNI_OUT}"
 
-# The APK ships the JNI bridge as libmpv.so, but MPVLib.kt calls
-# System.loadLibrary("player-lib") which resolves to libplayer-lib.so.
-echo "▶  Renaming libmpv.so → libplayer-lib.so…"
-if [ -f "${JNI_OUT}/libmpv.so" ]; then
-    mv "${JNI_OUT}/libmpv.so" "${JNI_OUT}/libplayer-lib.so"
-    echo "   ✓ renamed"
-else
+echo "▶  Verifying libmpv.so…"
+if [ ! -f "${JNI_OUT}/libmpv.so" ]; then
     echo "   ⚠️  libmpv.so not found — listing extracted files:"
     ls -lh "${JNI_OUT}"/*.so || true
-    echo "   Check the APK contents and update this script accordingly."
     exit 1
 fi
 

@@ -179,6 +179,7 @@ android {
             // libc++_shared.so         — NDK C++ shared runtime; pre-built by Google,
             //   ships without a strippable debug section.
             keepDebugSymbols += listOf(
+                "**/libmpv.so",          // prebuilt from mpv-android, already stripped
                 "**/libass.so",
                 "**/libasskt.so",
                 "**/libc++_shared.so",

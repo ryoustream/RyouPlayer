@@ -108,7 +108,7 @@ class PlayerViewModel @Inject constructor(
 
     fun initializePlayer() {
         if (!MPVLib.isAvailable) {
-            _state.update { it.copy(error = "libplayer-lib.so not found.\nRun scripts/download_mpv_libs.sh and rebuild.") }
+            _state.update { it.copy(error = "libmpv.so not found.\nRun scripts/download_mpv_libs.sh and rebuild.") }
             Log.e(TAG, "MPVLib not available — libplayer-lib.so missing")
             return
         }
