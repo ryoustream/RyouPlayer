@@ -25,7 +25,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -129,6 +131,9 @@ fun PlayerScreen(
         viewModel.playUri(mediaUri)
     }
 
+    // Capture density before modifier chain (can't use LocalDensity.current inside pointerInput)
+    val pixelDensity = LocalDensity.current.density
+
     // ─────────────────────────────────────────────────────────────────────────
     Box(
         modifier = Modifier
@@ -140,7 +145,7 @@ fun PlayerScreen(
                     onTap       = { viewModel.toggleControls() },
                     onDoubleTap = { offset ->
                         if (!state.isLocked) {
-                            val edgePx = 56f * density
+                            val edgePx = 56f * pixelDensity
                             when {
                                 offset.x < edgePx || offset.x > size.width - edgePx -> { /* edge: ignore */ }
                                 offset.x < size.width / 2f -> viewModel.seekBackward(10)
@@ -154,7 +159,7 @@ fun PlayerScreen(
             // ── Horizontal drag = seek ───────────────────────────────────
             .pointerInput(state.isLocked) {
                 if (state.isLocked) return@pointerInput
-                val edgePx = 56f * density
+                val edgePx = 56f * pixelDensity
                 detectHorizontalDragGestures(
                     onDragStart = { off ->
                         isDraggingSeek = off.x > edgePx && off.x < size.width - edgePx
@@ -175,7 +180,7 @@ fun PlayerScreen(
             // ── Vertical drag = brightness (left) / volume (right) ───────
             .pointerInput(state.isLocked) {
                 if (state.isLocked) return@pointerInput
-                val edgePx = 56f * density
+                val edgePx = 56f * pixelDensity
                 detectVerticalDragGestures(
                     onDragStart = { off ->
                         val safe = off.x > edgePx && off.x < size.width - edgePx
@@ -215,7 +220,8 @@ fun PlayerScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Default.ErrorOutline, null,
                         tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(56.dp))
-                    Text(state.error, color = Color.White,
+                    // Fix: state.error is a delegated property — can't smart-cast, use ?: ""
+                    Text(state.error ?: "", color = Color.White,
                         style = MaterialTheme.typography.bodyMedium)
                     Button(onClick = onBack) { Text("Go Back") }
                 }

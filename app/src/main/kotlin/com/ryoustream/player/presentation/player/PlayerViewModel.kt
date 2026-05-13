@@ -465,13 +465,18 @@ class PlayerViewModel @Inject constructor(
         val modes   = AspectRatioMode.values()
         val current = _state.value.aspectRatioMode
         val next    = modes[(modes.indexOf(current) + 1) % modes.size]
-        val ratio   = when (next) {
-            AspectRatioMode.FIT     -> "-1"
-            AspectRatioMode.FILL    -> "16:9"
-            AspectRatioMode.CROP    -> "no"
-            AspectRatioMode.STRETCH -> "4:3"
+        val ratio = when (next) {
+            AspectRatioMode.FIT       -> "-1"       // mpv auto aspect
+            AspectRatioMode.FILL      -> "no"        // mpv stretch to fill
+            AspectRatioMode.CROP      -> "no"        // handled via panscan below
+            AspectRatioMode.STRETCH   -> "no"        // no correction
+            AspectRatioMode.RATIO_4_3 -> "4:3"
+            AspectRatioMode.RATIO_16_9 -> "16:9"
+            AspectRatioMode.RATIO_21_9 -> "21:9"
         }
+        val panscan = if (next == AspectRatioMode.CROP) "1.0" else "0.0"
         MPVLib.setPropertyString("video-aspect-override", ratio)
+        MPVLib.setPropertyString("panscan", panscan)
         _state.update { it.copy(aspectRatioMode = next) }
     }
 
