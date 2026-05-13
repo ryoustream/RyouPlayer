@@ -1,29 +1,31 @@
 package com.ryoustream.player.presentation.player
 
-import android.graphics.Bitmap
 import android.util.Log
-import io.github.peerless2012.ass.AssLibrary
-import io.github.peerless2012.ass.AssRenderer
+import io.github.peerless2012.ass.Ass
+import io.github.peerless2012.ass.AssFrame
+import io.github.peerless2012.ass.AssRender
+import io.github.peerless2012.ass.AssTexType
 import io.github.peerless2012.ass.AssTrack
 
 /**
  * AssJniRenderer
  *
- * Kotlin wrapper around [peerless2012/libass-android](https://github.com/peerless2012/libass-android).
- * Maven: `io.github.peerless2012:ass-kt:0.3.0`
+ * Kotlin wrapper around [peerless2012/libass-android](https://github.com/peerless2012/libass-android)
+ * `ass-kt` module. Maven: `io.github.peerless2012:ass-kt:0.4.0`
  *
- * Uses native libass via JNI for accurate ASS/SSA rendering (karaoke, \clip,
- * \move, transforms, etc.). Falls back to Kotlin renderer automatically if the
- * native library fails to load.
+ * ## API summary (from actual source)
+ * - [Ass]          — library context, factory for track + render
+ * - [AssTrack]     — subtitle track; loaded via `readBuffer(ByteArray)`
+ * - [AssRender]    — renderer; `renderFrame(posMs, BITMAP_RGBA)` → [AssFrame]
+ * - [AssFrame]     — result; `images: Array<AssTex>?` each with `x,y,w,h,bitmap`
  *
  * ## Lifecycle
  * ```kotlin
  * val r = AssJniRenderer()
  * if (r.isAvailable) {
- *     r.loadData(subtitleBytes)
- *     r.setFrameSize(videoW, videoH)
- *     val bmp = Bitmap.createBitmap(videoW, videoH, Bitmap.Config.ARGB_8888)
- *     r.renderFrame(positionMs, bmp)
+ *     r.loadData(bytes)
+ *     r.setFrameSize(w, h)
+ *     val frame = r.renderFrame(posMs)   // AssFrame? to draw
  *     r.destroy()
  * }
  * ```
@@ -32,14 +34,15 @@ class AssJniRenderer {
 
     val isAvailable: Boolean
 
-    private var library:  AssLibrary?  = null
-    private var renderer: AssRenderer? = null
-    private var track:    AssTrack?    = null
+    private var ass:    Ass?       = null
+    private var track:  AssTrack?  = null
+    private var render: AssRender? = null
 
     init {
         isAvailable = try {
-            library  = AssLibrary.create()
-            renderer = library?.createRenderer()
+            ass    = Ass()
+            track  = ass!!.createTrack()
+            render = ass!!.createRender()
             true
         } catch (e: Throwable) {
             Log.w(TAG, "libass unavailable — falling back to Kotlin renderer: ${e.message}")
@@ -50,50 +53,51 @@ class AssJniRenderer {
     // ── Public API ─────────────────────────────────────────────────────────
 
     /**
-     * Load subtitle content from raw bytes (.ass / .ssa).
+     * Load subtitle bytes (.ass / .ssa full file).
      * @return true on success.
      */
     fun loadData(data: ByteArray): Boolean {
         if (!isAvailable) return false
         return try {
-            track?.release()
-            track = library?.createTrackFromData(data)
-            track != null
+            track?.readBuffer(data)
+            render?.setTrack(track)
+            true
         } catch (e: Throwable) {
-            Log.e(TAG, "loadData failed: ${e.message}")
+            Log.e(TAG, "loadData: ${e.message}")
             false
         }
     }
 
     /**
-     * Set video frame size — must be called before [renderFrame].
+     * Set video frame dimensions — call before first [renderFrame].
      */
     fun setFrameSize(width: Int, height: Int) {
-        renderer?.setFrameSize(width, height)
+        render?.setFrameSize(width, height)
+        render?.setStorageSize(width, height)
     }
 
     /**
-     * Render the subtitle overlay for [positionMs] into [bitmap] (ARGB_8888).
-     * @return number of subtitle image segments drawn; 0 = no active subtitle.
+     * Render subtitle overlay for [positionMs].
+     * Returns [AssFrame] whose `images` array contains [AssTex] bitmaps with
+     * their screen positions, or null when no subtitle is active.
      */
-    fun renderFrame(positionMs: Long, bitmap: Bitmap): Int {
-        val r = renderer ?: return 0
-        val t = track    ?: return 0
+    fun renderFrame(positionMs: Long): AssFrame? {
+        if (!isAvailable) return null
         return try {
-            r.renderFrame(t, positionMs, bitmap)
+            render?.renderFrame(positionMs, AssTexType.BITMAP_RGBA)
         } catch (e: Throwable) {
-            Log.e(TAG, "renderFrame error: ${e.message}")
-            0
+            Log.e(TAG, "renderFrame: ${e.message}")
+            null
         }
     }
 
     /**
-     * Release all native resources. Must be called when done.
+     * Release all native resources.
      */
     fun destroy() {
-        track?.release();    track    = null
-        renderer?.release(); renderer = null
-        library?.release();  library  = null
+        render = null
+        track  = null
+        ass    = null
     }
 
     companion object {

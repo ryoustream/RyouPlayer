@@ -1,56 +1,57 @@
 package com.ryoustream.player.presentation.player
 
-import android.graphics.Bitmap
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
 import com.ryoustream.player.domain.model.AssCue
 import com.ryoustream.player.domain.model.SubtitleStyle
+import io.github.peerless2012.ass.Ass as AssLib
+import io.github.peerless2012.ass.AssFrame
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
  * AssSubtitleView
  *
- * Drop-in overlay for ASS/SSA subtitle rendering.
+ * Unified ASS/SSA subtitle overlay composable.
  *
  * ## Strategy
- * 1. **JNI path** — if [AssJniRenderer] is available (libass.so present in
- *    jniLibs/), subtitle frames are rendered natively to an ARGB Bitmap and
- *    composited here via `Image`. Supports all ASS features: \clip, \move,
- *    karaoke effects, per-character transforms.
- * 2. **Kotlin fallback** — if libass is absent, delegates to the pure-Kotlin
- *    [AssSubtitleRenderer] composable (outline + shadow via Canvas draw calls).
+ * 1. **JNI path** — [AssJniRenderer] available (libass native loaded from `ass-kt` AAR).
+ *    `renderFrame()` returns [AssFrame] containing `Array<AssTex>`, each with a
+ *    pre-rendered Bitmap and its screen position (x, y). Composited via Canvas.
  *
- * Callers decide which path by checking [AssSubtitleView.jniAvailable].
+ * 2. **Kotlin fallback** — libass failed to load. Delegates to [AssSubtitleRenderer]
+ *    (pure-Kotlin Canvas-based outline renderer). Zero native dependency.
  *
- * @param rawBytes   Raw bytes of the .ass/.ssa file — used only when JNI is active.
- * @param cues       Pre-parsed cues (from AssParser) — used only for Kotlin path.
+ * @param rawBytes   Full bytes of the .ass / .ssa file.
+ * @param cues       Pre-parsed cue list — used only by the Kotlin fallback path.
  * @param positionMs Current playback position in milliseconds.
- * @param style      Visual style for the Kotlin fallback path.
+ * @param style      Visual style for the Kotlin fallback renderer.
  */
 @Composable
 fun AssSubtitleView(
-    rawBytes:    ByteArray?,
-    cues:        List<AssCue>,
-    positionMs:  Long,
-    style:       SubtitleStyle = SubtitleStyle(),
-    modifier:    Modifier      = Modifier,
+    rawBytes:   ByteArray?,
+    cues:       List<AssCue>,
+    positionMs: Long,
+    style:      SubtitleStyle = SubtitleStyle(),
+    modifier:   Modifier      = Modifier,
 ) {
-    val useJni = remember { AssJniRenderer().also { it.destroy() }.isAvailable && rawBytes != null }
+    // Check once whether native libass is loadable
+    val jniAvailable = remember {
+        try { AssLib(); true } catch (_: Throwable) { false }
+    }
 
-    if (useJni && rawBytes != null) {
+    if (jniAvailable && rawBytes != null) {
         JniSubtitleOverlay(
             rawBytes   = rawBytes,
             positionMs = positionMs,
             modifier   = modifier,
         )
     } else {
-        // Pure-Kotlin renderer — always available, no native dependency
         AssSubtitleRenderer(
             cues       = cues,
             positionMs = positionMs,
@@ -61,7 +62,7 @@ fun AssSubtitleView(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JNI path
+// JNI path: composites AssFrame.images (Array<AssTex>) onto a Canvas
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -70,77 +71,58 @@ private fun JniSubtitleOverlay(
     positionMs: Long,
     modifier:   Modifier = Modifier,
 ) {
-    // One renderer per composition — created once, destroyed on leave
     val renderer = remember { AssJniRenderer() }
     var loaded   by remember { mutableStateOf(false) }
     var frameW   by remember { mutableIntStateOf(0) }
     var frameH   by remember { mutableIntStateOf(0) }
-    var bitmap   by remember { mutableStateOf<Bitmap?>(null) }
+    var frame    by remember { mutableStateOf<AssFrame?>(null) }
 
-    // Load subtitle data once
+    // Load subtitle data once per rawBytes change
     LaunchedEffect(rawBytes) {
         withContext(Dispatchers.IO) {
             loaded = renderer.loadData(rawBytes)
         }
     }
 
-    // Re-allocate bitmap when frame size changes
+    // Notify renderer when layout dimensions become known / change
     LaunchedEffect(frameW, frameH) {
         if (frameW > 0 && frameH > 0) {
-            bitmap?.recycle()
-            bitmap = Bitmap.createBitmap(frameW, frameH, Bitmap.Config.ARGB_8888)
             renderer.setFrameSize(frameW, frameH)
         }
     }
 
-    // Render each frame on position change
-    LaunchedEffect(positionMs, loaded) {
+    // Render on every position tick
+    LaunchedEffect(positionMs, loaded, frameW) {
         if (!loaded || frameW == 0) return@LaunchedEffect
-        val bmp = bitmap ?: return@LaunchedEffect
-        withContext(Dispatchers.Default) {
-            renderer.renderFrame(positionMs, bmp)
+        frame = withContext(Dispatchers.Default) {
+            renderer.renderFrame(positionMs)
         }
-        // Force recomposition — copy to new reference so Compose detects change
-        bitmap = bmp
     }
 
-    // Release when leaving composition
     DisposableEffect(Unit) {
-        onDispose {
-            renderer.destroy()
-            bitmap?.recycle()
-            bitmap = null
-        }
+        onDispose { renderer.destroy() }
     }
 
-    bitmap?.let { bmp ->
-        Image(
-            bitmap       = bmp.asImageBitmap(),
-            contentDescription = null,
-            contentScale = ContentScale.FillBounds,
-            modifier     = modifier
-                .fillMaxSize()
-                .onSizeChanged { size ->
-                    if (size.width != frameW || size.height != frameH) {
-                        frameW = size.width
-                        frameH = size.height
-                    }
-                },
-        )
-    } ?: run {
-        // Size probe — invisible box that captures dimensions before first render
-        androidx.compose.foundation.layout.Box(
-            modifier = modifier
-                .fillMaxSize()
-                .onSizeChanged { size ->
-                    if (size.width != frameW || size.height != frameH) {
-                        frameW = size.width
-                        frameH = size.height
-                    }
-                },
-        )
+    // Capture layout size and composite subtitle bitmaps
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .onSizeChanged { size ->
+                if (size.width != frameW || size.height != frameH) {
+                    frameW = size.width
+                    frameH = size.height
+                }
+            },
+    ) {
+        val images = frame?.images ?: return@Canvas
+        drawIntoCanvas { canvas ->
+            val nCanvas = canvas.nativeCanvas
+            for (tex in images) {
+                val bmp = tex.bitmap ?: continue
+                // Each AssTex carries its own pre-rendered RGBA bitmap +
+                // screen position from libass layout engine
+                nCanvas.drawBitmap(bmp, tex.x.toFloat(), tex.y.toFloat(), null)
+            }
+        }
     }
 }
-
-/** Convenience: check at call-site whether JNI rendering will be used */
-val jniSubtitleAvailable: Boolean by lazy { AssJniRenderer().run { destroy(); isAvailable } }

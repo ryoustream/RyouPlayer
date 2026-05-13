@@ -296,7 +296,7 @@ fun SettingsScreen(
             }
             item {
                 SwitchSetting(
-                    icon = Icons.Default.PhoneAndroid,
+                    icon = Icons.Default.Fullscreen,
                     title = "Ignore Notch / Display Cutout",
                     subtitle = "Extend player behind notch/hole-punch (full-screen video)",
                     checked = s.ignoreNotch,
