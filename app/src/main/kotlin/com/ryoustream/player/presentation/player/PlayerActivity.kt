@@ -10,94 +10,105 @@ import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
-import com.ryoustream.player.data.repository.SettingsRepositoryImpl
+import androidx.core.view.WindowCompat
+import com.ryoustream.player.domain.repository.SettingsRepository
 import com.ryoustream.player.presentation.theme.RyouPlayerTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 /**
- * PlayerActivity
+ * PlayerActivity — full-screen mpv-based player.
  *
- * Dedicated Activity for video playback.
- * Always runs in landscape mode.
- * Supports Picture-in-Picture.
+ * Display-cutout behaviour is applied SYNCHRONOUSLY before setContent so
+ * the setting from preferences actually takes effect. Using a coroutine here
+ * caused a race condition where setContent ran before the window attribute
+ * was applied, so the theme's default (NEVER) was used instead.
  */
 @AndroidEntryPoint
 class PlayerActivity : ComponentActivity() {
 
     @Inject
-    lateinit var settingsRepository: com.ryoustream.player.domain.repository.SettingsRepository
-
-    private var mediaUri: Uri? = null
+    lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
 
-        // Apply notch/display-cutout setting before setContent
-        lifecycleScope.launch {
-            val ignoreNotch = settingsRepository.ignoreNotch.first()
-            applyNotchMode(ignoreNotch)
-        }
+        // ── 1. Read notch pref SYNCHRONOUSLY (IO call is fast — DataStore cache) ──
+        val ignoreNotch = runBlocking { settingsRepository.ignoreNotch.first() }
 
-        // Parse URI from intent
-        mediaUri = when {
+        // ── 2. Apply cutout mode BEFORE setContent so the window sees it ────────
+        applyNotchMode(ignoreNotch)
+
+        // ── 3. Edge-to-edge (status + nav bars transparent) ─────────────────────
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // ── 4. Parse incoming URI ────────────────────────────────────────────────
+        val mediaUri: Uri = when {
             intent?.action == Intent.ACTION_VIEW -> intent.data
-            intent?.hasExtra(EXTRA_MEDIA_URI) == true -> Uri.parse(intent.getStringExtra(EXTRA_MEDIA_URI))
+            intent?.hasExtra(EXTRA_MEDIA_URI) == true ->
+                Uri.parse(intent.getStringExtra(EXTRA_MEDIA_URI))
             else -> null
-        }
+        } ?: run { finish(); return }
 
-        val uri = mediaUri ?: run { finish(); return }
-
+        // ── 5. Compose UI ────────────────────────────────────────────────────────
         setContent {
-            // Observe notch setting reactively so toggling in Settings takes effect next launch
             RyouPlayerTheme(darkTheme = true, dynamicColor = false) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color.Black,
+                    color    = Color.Black,
                 ) {
                     PlayerScreen(
-                        mediaUri = uri,
-                        onBack = { finish() },
+                        mediaUri = mediaUri,
+                        onBack   = { finish() },
                     )
                 }
             }
         }
     }
 
-    private fun applyNotchMode(ignore: Boolean) {
+    /**
+     * Apply display-cutout mode to the window.
+     *
+     * [ignoreNotch] = true  → SHORT_EDGES  → video extends into the notch area.
+     * [ignoreNotch] = false → NEVER        → content is letterboxed away from the notch.
+     *
+     * This must be called BEFORE setContent and NOT inside a coroutine/LaunchedEffect,
+     * otherwise the theme default wins and the setting has no effect.
+     */
+    private fun applyNotchMode(ignoreNotch: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes = window.attributes.apply {
-                layoutInDisplayCutoutMode = if (ignore) {
+                layoutInDisplayCutoutMode = if (ignoreNotch) {
+                    // Extend video surface into the camera-notch area
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
                 } else {
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                    // Keep content clear of the notch — truly respected value
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
                 }
             }
         }
     }
 
+    // ── PiP ──────────────────────────────────────────────────────────────────
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            enterPictureInPictureModeIfPossible()
+            enterPipIfPossible()
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private fun enterPictureInPictureModeIfPossible() {
+    private fun enterPipIfPossible() {
         if (!isInPictureInPictureMode) {
             val params = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))

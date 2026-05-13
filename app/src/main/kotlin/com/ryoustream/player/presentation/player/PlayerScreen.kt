@@ -5,7 +5,6 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
@@ -13,15 +12,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.automirrored.outlined.*
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,43 +36,43 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
-import androidx.media3.ui.SubtitleView
 import com.ryoustream.player.domain.model.AspectRatioMode
 import com.ryoustream.player.domain.model.MediaItem as DomainMediaItem
 import com.ryoustream.player.domain.model.RepeatMode
+import `is`.xyz.mpv.MPVView
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PlayerScreen — powered by libmpv via MPVView
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 fun PlayerScreen(
     mediaUri: Uri,
-    onBack: () -> Unit,
+    onBack:   () -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
-    val context = LocalContext.current
+    val context  = LocalContext.current
     val activity = context as? Activity
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val player by viewModel.player.collectAsStateWithLifecycle()
+    val state    by viewModel.state.collectAsStateWithLifecycle()
 
-    // Gesture delta state
-    var seekDelta by remember { mutableLongStateOf(0L) }
-    var isDraggingSeek by remember { mutableStateOf(false) }
-    var isDraggingVolume by remember { mutableStateOf(false) }
+    // ── Gesture state ────────────────────────────────────────────────────────
+    var seekDelta           by remember { mutableLongStateOf(0L) }
+    var isDraggingSeek      by remember { mutableStateOf(false) }
+    var isDraggingVolume    by remember { mutableStateOf(false) }
     var isDraggingBrightness by remember { mutableStateOf(false) }
 
-    // Subtitle file picker
+    // ── Subtitle file picker ─────────────────────────────────────────────────
     val subtitlePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri -> uri?.let { viewModel.loadExternalSubtitleFromUri(it) } }
 
-    // Keep screen on
+    // ── Keep screen on ───────────────────────────────────────────────────────
     DisposableEffect(Unit) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // Hide system UI (immersive)
+    // ── Immersive / hide system UI ───────────────────────────────────────────
     DisposableEffect(Unit) {
         activity?.let { act ->
             WindowCompat.setDecorFitsSystemWindows(act.window, false)
@@ -89,50 +84,37 @@ fun PlayerScreen(
         }
         onDispose {
             activity?.let { act ->
-                // Restore to edge-to-edge (MainActivity uses enableEdgeToEdge)
-                // DO NOT set decorFitsSystemWindows(true) — that breaks insets/header
                 WindowInsetsControllerCompat(act.window, act.window.decorView).apply {
                     show(WindowInsetsCompat.Type.systemBars())
                     systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
                 }
-                // Restore edge-to-edge state (MainActivity uses enableEdgeToEdge)
-                // enableEdgeToEdge is an extension on ComponentActivity, call it on the activity
-                (act as? androidx.activity.ComponentActivity)?.enableEdgeToEdge()
+                (act as? androidx.activity.ComponentActivity)?.apply {
+                    WindowCompat.setDecorFitsSystemWindows(window, false)
+                }
             }
         }
     }
 
-    // ── Orientation handling ────────────────────────────────────────────────
-    val videoWidth  = state.videoWidth.takeIf { it > 0 } ?: (state.playbackState.mediaItem?.width  ?: 0)
-    val videoHeight = state.videoHeight.takeIf { it > 0 } ?: (state.playbackState.mediaItem?.height ?: 0)
-    LaunchedEffect(state.orientationMode, videoWidth, videoHeight) {
+    // ── Orientation ──────────────────────────────────────────────────────────
+    val videoW = state.videoWidth.takeIf { it > 0 } ?: (state.playbackState.mediaItem?.width  ?: 0)
+    val videoH = state.videoHeight.takeIf { it > 0 } ?: (state.playbackState.mediaItem?.height ?: 0)
+    LaunchedEffect(state.orientationMode, videoW, videoH) {
         activity?.requestedOrientation = when (state.orientationMode) {
-            OrientationMode.AUTO ->
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR
-            OrientationMode.SENSOR_VIDEO -> {
-                // Lock to axis matching the video's aspect ratio
-                if (videoWidth >= videoHeight)
-                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                else
-                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            }
-            OrientationMode.LOCK_PORTRAIT ->
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            OrientationMode.LOCK_PORTRAIT_REVERSE ->
-                ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
-            OrientationMode.LOCK_LANDSCAPE ->
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            OrientationMode.LOCK_LANDSCAPE_REVERSE ->
-                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+            OrientationMode.AUTO                -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
+            OrientationMode.SENSOR_VIDEO        ->
+                if (videoW >= videoH) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                else                  ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            OrientationMode.LOCK_PORTRAIT       -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            OrientationMode.LOCK_PORTRAIT_REVERSE -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+            OrientationMode.LOCK_LANDSCAPE      -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            OrientationMode.LOCK_LANDSCAPE_REVERSE -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
         }
     }
-
-    // Reset orientation when leaving
     DisposableEffect(Unit) {
         onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
 
-    // Brightness
+    // ── Brightness ───────────────────────────────────────────────────────────
     LaunchedEffect(state.brightnessLevel) {
         if (state.brightnessLevel >= 0f) {
             activity?.window?.attributes = activity?.window?.attributes?.apply {
@@ -141,157 +123,132 @@ fun PlayerScreen(
         }
     }
 
-    // Init + play
+    // ── Init mpv + play ──────────────────────────────────────────────────────
     LaunchedEffect(mediaUri) {
         viewModel.initializePlayer()
         viewModel.playUri(mediaUri)
     }
 
-    // ── Safe edge widths for gestures (avoid navigation gesture area) ──────
-    val safeEdge = 48.dp  // px from edges = no gesture zone
-
+    // ─────────────────────────────────────────────────────────────────────────
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            // ── Single / Double tap ─────────────────────────────────────
+            // ── Tap / double-tap ─────────────────────────────────────────
             .pointerInput(state.isLocked) {
                 detectTapGestures(
-                    onTap = { viewModel.toggleControls() },
+                    onTap       = { viewModel.toggleControls() },
                     onDoubleTap = { offset ->
                         if (!state.isLocked) {
-                            val safeEdgePx = 48f * 3f  // ~48dp in px (approx for gesture dead zone)
-                            val zone = size.width / 2f
+                            val edgePx = 56f * density
                             when {
-                                offset.x < safeEdgePx || offset.x > size.width - safeEdgePx -> { /* edge — ignore */ }
-                                offset.x < zone -> viewModel.seekBackward(10)
-                                else            -> viewModel.seekForward(10)
+                                offset.x < edgePx || offset.x > size.width - edgePx -> { /* edge: ignore */ }
+                                offset.x < size.width / 2f -> viewModel.seekBackward(10)
+                                else                        -> viewModel.seekForward(10)
                             }
                             viewModel.showControlsTemporarily()
                         }
-                    }
+                    },
                 )
             }
-            // ── Horizontal drag = seek (with safe edge margins) ─────────
+            // ── Horizontal drag = seek ───────────────────────────────────
             .pointerInput(state.isLocked) {
                 if (state.isLocked) return@pointerInput
-                val safeEdgePx = 48f * 3f  // ~48dp in px (approx for gesture dead zone)
+                val edgePx = 56f * density
                 detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        if (offset.x > safeEdgePx && offset.x < size.width - safeEdgePx)
-                            isDraggingSeek = true
+                    onDragStart = { off ->
+                        isDraggingSeek = off.x > edgePx && off.x < size.width - edgePx
                         seekDelta = 0L
                     },
-                    onDragEnd = {
-                        if (isDraggingSeek) {
-                            viewModel.seekTo(
-                                (state.playbackState.currentPosition + seekDelta)
-                                    .coerceIn(0L, state.playbackState.duration)
-                            )
-                        }
+                    onDragEnd  = {
+                        if (isDraggingSeek) viewModel.seekTo(
+                            (state.playbackState.currentPosition + seekDelta)
+                                .coerceIn(0L, state.playbackState.duration)
+                        )
                         isDraggingSeek = false; seekDelta = 0L
                     },
-                    onHorizontalDrag = { _, delta ->
-                        if (isDraggingSeek) seekDelta += (delta * 200).toLong()
+                    onHorizontalDrag = { _, d ->
+                        if (isDraggingSeek) seekDelta += (d * 200).toLong()
                     },
                 )
             }
-            // ── Vertical drag = brightness (left) / volume (right) ──────
+            // ── Vertical drag = brightness (left) / volume (right) ───────
             .pointerInput(state.isLocked) {
                 if (state.isLocked) return@pointerInput
-                val safeEdgePx = 48f * 3f  // ~48dp in px (approx for gesture dead zone)
+                val edgePx = 56f * density
                 detectVerticalDragGestures(
-                    onDragStart = { offset ->
-                        val inSafeX = offset.x > safeEdgePx && offset.x < size.width - safeEdgePx
-                        isDraggingVolume     = inSafeX && offset.x > size.width / 2f
-                        isDraggingBrightness = inSafeX && offset.x <= size.width / 2f
+                    onDragStart = { off ->
+                        val safe = off.x > edgePx && off.x < size.width - edgePx
+                        isDraggingVolume     = safe && off.x > size.width / 2f
+                        isDraggingBrightness = safe && off.x <= size.width / 2f
                     },
                     onDragEnd = { isDraggingVolume = false; isDraggingBrightness = false },
-                    onVerticalDrag = { _, delta ->
-                        val d = -delta / 600f
-                        if (isDraggingVolume)     viewModel.setVolume(state.volumeLevel + d)
-                        if (isDraggingBrightness) viewModel.setBrightness(
-                            (state.brightnessLevel.let { if (it < 0) 0.5f else it }) + d
-                        )
+                    onVerticalDrag = { _, d ->
+                        val delta = -d / 600f
+                        if (isDraggingVolume)
+                            viewModel.setVolume(state.volumeLevel + delta)
+                        if (isDraggingBrightness)
+                            viewModel.setBrightness(
+                                (state.brightnessLevel.let { if (it < 0) 0.5f else it }) + delta
+                            )
                     },
                 )
-            }
+            },
     ) {
-        // ── Video Surface ─────────────────────────────────────────────────
+
+        // ── MPV Video Surface ────────────────────────────────────────────────
+        // MPVView is a SurfaceView that forwards the Surface to libmpv.
+        // mpv renders video AND subtitles (via libass) directly onto this surface.
+        // No separate subtitle overlay is needed for embedded tracks.
         AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
-                    // Disable ExoPlayer's built-in SubtitleView.
-                    // Embedded ASS/SSA: rendered by AssLibassOverlay (libass JNI) below.
-                    // External files: rendered by AssSubtitleRenderer (Kotlin) below.
-                    subtitleView?.visibility = android.view.View.GONE
-                }
-            },
-            update = { view ->
-                view.player = player
-                view.resizeMode = when (state.aspectRatioMode) {
-                    AspectRatioMode.FILL    -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                    AspectRatioMode.CROP    -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                    AspectRatioMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                    else                    -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                }
-                view.subtitleView?.visibility = android.view.View.GONE
-            },
+            factory = { ctx -> MPVView(ctx) },
             modifier = Modifier.fillMaxSize(),
         )
 
-        // ── Libass overlay — embedded ASS/SSA from MKV (full styling) ─────────
-        // AssHandler (via ass-media) hooks ExoPlayer's track events and feeds
-        // initializationData + per-dialogue chunks directly into libass.
-        // This preserves fonts, animations, \pos, \move, karaoke, overrides.
-        if (state.subtitleEnabled && state.selectedSubtitleTrack >= 0) {
-            val adjustedMs = state.playbackState.currentPosition + state.subtitleDelay
-            AssLibassOverlay(
-                handler    = viewModel.assMediaHandler,
-                positionMs = adjustedMs,
-                modifier   = Modifier.fillMaxSize().padding(bottom = 80.dp),
-            )
-        }
-
-        // ── External subtitle overlay — .ass/.srt loaded by user ─────────────
-        // Uses Kotlin renderer with SubtitleStyle (style sheet changes apply here).
-        if (state.subtitleEnabled && state.subtitleCues.isNotEmpty()) {
-            val adjustedMs = state.playbackState.currentPosition + state.subtitleDelay
-            AssSubtitleRenderer(
-                cues        = state.subtitleCues,
-                positionMs  = adjustedMs,
-                style       = state.subtitleStyle,
-                modifier    = Modifier.fillMaxSize().padding(bottom = 80.dp),
-            )
-        }
-
-        // ── Seek preview ──────────────────────────────────────────────────
-        AnimatedVisibility(visible = isDraggingSeek, enter = fadeIn(), exit = fadeOut()) {
+        // ── mpv missing overlay ──────────────────────────────────────────────
+        if (!state.mpvReady && state.error != null) {
             Box(
-                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)),
+                Modifier.fillMaxSize().background(Color.Black.copy(0.85f)),
                 contentAlignment = Alignment.Center,
             ) {
-                val preview = (state.playbackState.currentPosition + seekDelta)
-                    .coerceIn(0, state.playbackState.duration)
-                SeekPreview(seekDelta = seekDelta, previewMs = preview)
+                Column(horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Default.ErrorOutline, null,
+                        tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(56.dp))
+                    Text(state.error, color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = onBack) { Text("Go Back") }
+                }
             }
         }
 
-        // ── Volume indicator ──────────────────────────────────────────────
+        // ── Seek drag preview ────────────────────────────────────────────────
+        AnimatedVisibility(visible = isDraggingSeek, enter = fadeIn(), exit = fadeOut()) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black.copy(0.25f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                val previewMs = (state.playbackState.currentPosition + seekDelta)
+                    .coerceIn(0L, state.playbackState.duration)
+                SeekPreview(seekDelta = seekDelta, previewMs = previewMs)
+            }
+        }
+
+        // ── Volume indicator ─────────────────────────────────────────────────
         AnimatedVisibility(
             visible  = isDraggingVolume,
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 56.dp),
             enter = fadeIn(), exit = fadeOut(),
         ) {
             GestureIndicatorBar(
-                icon  = if (state.volumeLevel > 0f) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                icon  = if (state.volumeLevel > 0f)
+                    Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
                 value = state.volumeLevel,
                 label = "${(state.volumeLevel * 100).toInt()}%",
             )
         }
 
-        // ── Brightness indicator ──────────────────────────────────────────
+        // ── Brightness indicator ─────────────────────────────────────────────
         AnimatedVisibility(
             visible  = isDraggingBrightness,
             modifier = Modifier.align(Alignment.CenterStart).padding(start = 56.dp),
@@ -304,30 +261,32 @@ fun PlayerScreen(
             )
         }
 
-        // ── Buffering spinner ─────────────────────────────────────────────
-        if (state.playbackState.isBuffering && !isDraggingSeek) {
+        // ── Buffering spinner ────────────────────────────────────────────────
+        AnimatedVisibility(
+            visible  = state.isBuffering && !isDraggingSeek,
+            modifier = Modifier.align(Alignment.Center),
+            enter = fadeIn(), exit = fadeOut(),
+        ) {
             CircularProgressIndicator(
-                color    = Color.White,
-                modifier = Modifier.align(Alignment.Center).size(48.dp),
-                strokeWidth = 3.dp,
+                color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(52.dp),
             )
         }
 
-        // ── Player Controls ───────────────────────────────────────────────
+        // ── Controls overlay ─────────────────────────────────────────────────
         AnimatedVisibility(
             visible = state.showControls && !isDraggingSeek,
             enter   = fadeIn(tween(150)),
             exit    = fadeOut(tween(150)),
         ) {
             PlayerControls(
-                state     = state,
-                onBack    = { viewModel.savePosition(); onBack() },
-                viewModel = viewModel,
+                state          = state,
+                onBack         = { viewModel.savePosition(); onBack() },
+                viewModel      = viewModel,
                 onSubtitlePick = { subtitlePicker.launch("*/*") },
             )
         }
 
-        // ── Lock overlay ──────────────────────────────────────────────────
+        // ── Lock overlay ─────────────────────────────────────────────────────
         if (state.isLocked) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
                 IconButton(
@@ -340,7 +299,7 @@ fun PlayerScreen(
             }
         }
 
-        // ── Subtitle Panel ────────────────────────────────────────────────
+        // ── Bottom Sheets ────────────────────────────────────────────────────
         if (state.showSubtitlePanel) {
             SubtitlePanel(
                 state      = state,
@@ -349,17 +308,9 @@ fun PlayerScreen(
                 onDismiss  = viewModel::hideSubtitlePanel,
             )
         }
-
-        // ── Audio Panel ───────────────────────────────────────────────────
         if (state.showAudioPanel) {
-            AudioPanel(
-                state     = state,
-                viewModel = viewModel,
-                onDismiss = viewModel::hideAudioPanel,
-            )
+            AudioPanel(state = state, viewModel = viewModel, onDismiss = viewModel::hideAudioPanel)
         }
-
-        // ── Subtitle Style Sheet ──────────────────────────────────────────
         if (state.showSubtitleStyleSheet) {
             SubtitleStyleSheet(
                 currentStyle  = state.subtitleStyle,
@@ -370,7 +321,9 @@ fun PlayerScreen(
     }
 }
 
-// ─── Main Controls Overlay ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Controls Overlay
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun PlayerControls(
@@ -379,24 +332,26 @@ private fun PlayerControls(
     viewModel:      PlayerViewModel,
     onSubtitlePick: () -> Unit,
 ) {
-    val pb     = state.playbackState
+    val pb                  = state.playbackState
     var showOrientationMenu by remember { mutableStateOf(false) }
     var showSpeedMenu       by remember { mutableStateOf(false) }
     val speeds = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f)
 
     Box(Modifier.fillMaxSize()) {
-        // Top gradient
+        // Gradient — top
         Box(
             Modifier.fillMaxWidth().height(110.dp).align(Alignment.TopCenter)
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(0.75f), Color.Transparent)))
+                .background(Brush.verticalGradient(
+                    listOf(Color.Black.copy(0.78f), Color.Transparent)))
         )
-        // Bottom gradient
+        // Gradient — bottom
         Box(
             Modifier.fillMaxWidth().height(180.dp).align(Alignment.BottomCenter)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.85f))))
+                .background(Brush.verticalGradient(
+                    listOf(Color.Transparent, Color.Black.copy(0.88f))))
         )
 
-        // ── Top Bar ───────────────────────────────────────────────────────
+        // ── Top bar ──────────────────────────────────────────────────────────
         Row(
             Modifier.fillMaxWidth().align(Alignment.TopCenter)
                 .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -406,17 +361,18 @@ private fun PlayerControls(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
             }
             Text(
-                state.mediaTitle.ifEmpty { pb.mediaItem?.displayName ?: "" },
-                color  = Color.White,
-                style  = MaterialTheme.typography.titleSmall,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                text     = state.mediaTitle.ifEmpty { pb.mediaItem?.displayName ?: "" },
+                color    = Color.White,
+                style    = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            // Aspect ratio
+            // Aspect ratio cycle button
             TextButton(onClick = viewModel::cycleAspectRatio) {
                 Text(state.aspectRatioMode.label, color = Color.White, fontSize = 11.sp)
             }
-            // Speed
+            // Speed menu
             Box {
                 TextButton(onClick = { showSpeedMenu = true }) {
                     Text("${pb.playbackSpeed}×", color = Color.White, fontSize = 11.sp)
@@ -426,14 +382,15 @@ private fun PlayerControls(
                         DropdownMenuItem(
                             text = { Text("${spd}×") },
                             leadingIcon = {
-                                if (pb.playbackSpeed == spd) Icon(Icons.Default.Check, null)
+                                if (pb.playbackSpeed == spd)
+                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
                             },
                             onClick = { viewModel.setPlaybackSpeed(spd); showSpeedMenu = false },
                         )
                     }
                 }
             }
-            // Orientation
+            // Orientation menu
             Box {
                 IconButton(onClick = { showOrientationMenu = true }) {
                     Icon(Icons.Default.ScreenRotation, "Orientation", tint = Color.White)
@@ -443,14 +400,15 @@ private fun PlayerControls(
                         DropdownMenuItem(
                             text = { Text(mode.label) },
                             leadingIcon = {
-                                if (state.orientationMode == mode) Icon(Icons.Default.Check, null)
+                                if (state.orientationMode == mode)
+                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
                             },
                             onClick = { viewModel.setOrientationMode(mode); showOrientationMenu = false },
                         )
                     }
                 }
             }
-            // Lock
+            // Lock toggle
             IconButton(onClick = viewModel::toggleLock) {
                 Icon(
                     if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
@@ -459,24 +417,26 @@ private fun PlayerControls(
             }
         }
 
-        // ── Center Controls ───────────────────────────────────────────────
+        // ── Center transport ─────────────────────────────────────────────────
         Row(
             Modifier.align(Alignment.Center),
             horizontalArrangement = Arrangement.spacedBy(20.dp),
             verticalAlignment     = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { viewModel.seekBackward(10) }, Modifier.size(52.dp)) {
-                Icon(Icons.Default.Replay10, "−10s", tint = Color.White, modifier = Modifier.size(38.dp))
+                Icon(Icons.Default.Replay10, "−10s",
+                    tint = Color.White, modifier = Modifier.size(38.dp))
             }
             FloatingActionButton(
-                onClick          = viewModel::playPause,
-                modifier         = Modifier.size(62.dp),
-                containerColor   = Color.White.copy(alpha = 0.15f),
-                contentColor     = Color.White,
-                elevation        = FloatingActionButtonDefaults.elevation(0.dp),
+                onClick        = viewModel::playPause,
+                modifier       = Modifier.size(64.dp),
+                containerColor = Color.White.copy(0.15f),
+                contentColor   = Color.White,
+                elevation      = FloatingActionButtonDefaults.elevation(0.dp),
             ) {
-                if (pb.isBuffering) {
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                if (state.isBuffering) {
+                    CircularProgressIndicator(
+                        color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
                 } else {
                     Icon(
                         if (pb.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -485,16 +445,16 @@ private fun PlayerControls(
                 }
             }
             IconButton(onClick = { viewModel.seekForward(10) }, Modifier.size(52.dp)) {
-                Icon(Icons.Default.Forward10, "+10s", tint = Color.White, modifier = Modifier.size(38.dp))
+                Icon(Icons.Default.Forward10, "+10s",
+                    tint = Color.White, modifier = Modifier.size(38.dp))
             }
         }
 
-        // ── Bottom Bar ────────────────────────────────────────────────────
+        // ── Bottom bar ───────────────────────────────────────────────────────
         Column(
             Modifier.fillMaxWidth().align(Alignment.BottomCenter)
                 .padding(horizontal = 16.dp).padding(bottom = 8.dp),
         ) {
-            // Time row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     DomainMediaItem.formatDuration(pb.currentPosition),
@@ -505,52 +465,47 @@ private fun PlayerControls(
                     color = Color.White.copy(0.65f), style = MaterialTheme.typography.labelMedium,
                 )
             }
-            // Seekbar
             Slider(
                 value         = pb.progress,
                 onValueChange = { viewModel.seekTo((it * pb.duration).toLong()) },
                 modifier      = Modifier.fillMaxWidth(),
                 colors        = SliderDefaults.colors(
-                    thumbColor        = Color.White,
-                    activeTrackColor  = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor= Color.White.copy(0.3f),
+                    thumbColor         = Color.White,
+                    activeTrackColor   = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = Color.White.copy(0.3f),
                 ),
             )
-            // Bottom action row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                // Left: repeat, shuffle
+                // Left: repeat + shuffle
                 Row {
                     IconButton(onClick = viewModel::toggleRepeatMode) {
                         Icon(
                             when (pb.repeatMode) {
                                 RepeatMode.ONE -> Icons.Default.RepeatOne
-                                RepeatMode.ALL -> Icons.Default.Repeat
                                 else           -> Icons.Default.Repeat
                             },
                             "Repeat",
                             tint = if (pb.repeatMode == RepeatMode.NONE)
-                                Color.White.copy(0.45f) else MaterialTheme.colorScheme.primary,
+                                Color.White.copy(0.4f) else MaterialTheme.colorScheme.primary,
                         )
                     }
                     IconButton(onClick = viewModel::toggleShuffle) {
                         Icon(
                             Icons.Default.Shuffle, "Shuffle",
                             tint = if (pb.shuffleEnabled) MaterialTheme.colorScheme.primary
-                            else Color.White.copy(0.45f),
+                                   else Color.White.copy(0.4f),
                         )
                     }
                 }
-                // Right: subtitle, audio
+                // Right: subtitle + audio
                 Row {
-                    // Subtitle toggle + panel
                     IconButton(onClick = viewModel::showSubtitlePanel) {
                         Icon(
                             Icons.Default.Subtitles, "Subtitles",
                             tint = if (state.subtitleEnabled) MaterialTheme.colorScheme.primary
-                            else Color.White.copy(0.65f),
+                                   else Color.White.copy(0.65f),
                         )
                     }
-                    // Audio track panel
                     IconButton(onClick = viewModel::showAudioPanel) {
                         Icon(Icons.Default.Audiotrack, "Audio", tint = Color.White.copy(0.85f))
                     }
@@ -560,15 +515,17 @@ private fun PlayerControls(
     }
 }
 
-// ─── Subtitle Panel ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Subtitle Panel
+// ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SubtitlePanel(
-    state:     PlayerUiState,
-    viewModel: PlayerViewModel,
-    onPickFile:() -> Unit,
-    onDismiss: () -> Unit,
+    state:      PlayerUiState,
+    viewModel:  PlayerViewModel,
+    onPickFile: () -> Unit,
+    onDismiss:  () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -578,6 +535,7 @@ private fun SubtitlePanel(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // ── Header ───────────────────────────────────────────────────────
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -595,41 +553,29 @@ private fun SubtitlePanel(
             }
             HorizontalDivider()
 
-            // Delay control
-            var delayText by remember { mutableStateOf(state.subtitleDelay.toString()) }
+            // ── Sub delay ────────────────────────────────────────────────────
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Delay (ms):", style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.width(90.dp))
-                IconButton(onClick = {
-                    val d = (state.subtitleDelay - 500L)
-                    viewModel.setSubtitleDelay(d)
-                    delayText = d.toString()
-                }, Modifier.size(32.dp)) {
+                Text("Delay:", style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.width(56.dp))
+                IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay - 500L) },
+                    Modifier.size(32.dp)) {
                     Icon(Icons.Default.Remove, null, Modifier.size(18.dp))
                 }
-                Text(
-                    "${state.subtitleDelay}ms",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.width(70.dp),
-                )
-                IconButton(onClick = {
-                    val d = (state.subtitleDelay + 500L)
-                    viewModel.setSubtitleDelay(d)
-                    delayText = d.toString()
-                }, Modifier.size(32.dp)) {
+                Text("${state.subtitleDelay}ms",
+                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(72.dp))
+                IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay + 500L) },
+                    Modifier.size(32.dp)) {
                     Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                 }
-                TextButton(onClick = { viewModel.setSubtitleDelay(0L); delayText = "0" }) {
-                    Text("Reset")
-                }
+                TextButton(onClick = { viewModel.setSubtitleDelay(0L) }) { Text("Reset") }
             }
             HorizontalDivider()
 
-            // Disable
+            // ── Off ──────────────────────────────────────────────────────────
             ListItem(
                 headlineContent = { Text("Off") },
                 leadingContent  = {
@@ -641,10 +587,11 @@ private fun SubtitlePanel(
                 modifier = Modifier.clickable { viewModel.selectSubtitleTrack(null) },
             )
 
-            // Embedded tracks
+            // ── Embedded tracks ──────────────────────────────────────────────
             if (state.subtitleTracks.isNotEmpty()) {
                 Text(
-                    "Embedded", style = MaterialTheme.typography.labelSmall,
+                    "Embedded",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 16.dp, top = 4.dp),
                 )
@@ -653,7 +600,9 @@ private fun SubtitlePanel(
                         headlineContent = { Text(track.label) },
                         leadingContent  = {
                             RadioButton(
-                                selected = state.subtitleEnabled && state.selectedSubtitleTrack == track.index,
+                                // FIX: compare mpvId (not .index which is 0-based display index)
+                                selected = state.subtitleEnabled &&
+                                           state.selectedSubtitleTrack == track.mpvId,
                                 onClick  = { viewModel.selectSubtitleTrack(track) },
                             )
                         },
@@ -662,22 +611,8 @@ private fun SubtitlePanel(
                 }
             }
 
-            // External loaded cues
-            if (state.subtitleCues.isNotEmpty()) {
-                ListItem(
-                    headlineContent = { Text("External file (${state.subtitleCues.size} cues)") },
-                    leadingContent  = {
-                        RadioButton(
-                            selected = state.subtitleEnabled && state.subtitleCues.isNotEmpty(),
-                            onClick  = { viewModel.enableExternalSubtitle() },
-                        )
-                    },
-                    modifier = Modifier.clickable { viewModel.enableExternalSubtitle() },
-                )
-            }
-
             HorizontalDivider()
-            // Pick external file
+            // ── Load external ─────────────────────────────────────────────────
             ListItem(
                 headlineContent = { Text("Load subtitle file…") },
                 leadingContent  = { Icon(Icons.Default.FolderOpen, null) },
@@ -687,7 +622,9 @@ private fun SubtitlePanel(
     }
 }
 
-// ─── Audio Panel ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Audio Panel
+// ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -724,14 +661,15 @@ private fun AudioPanel(
             } else {
                 state.audioTracks.forEach { track ->
                     ListItem(
-                        headlineContent  = { Text(track.label) },
+                        headlineContent   = { Text(track.label) },
                         supportingContent = {
-                            if (track.language.isNotEmpty())
+                            if (track.language.isNotBlank())
                                 Text(track.language, style = MaterialTheme.typography.labelSmall)
                         },
                         leadingContent = {
                             RadioButton(
-                                selected = state.selectedAudioTrack == track.index,
+                                // FIX: compare mpvId
+                                selected = state.selectedAudioTrack == track.mpvId,
                                 onClick  = { viewModel.selectAudioTrack(track) },
                             )
                         },
@@ -743,13 +681,15 @@ private fun AudioPanel(
     }
 }
 
-// ─── Seek Preview ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Seek Preview
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun SeekPreview(seekDelta: Long, previewMs: Long) {
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = Color.Black.copy(alpha = 0.78f),
+        color = Color.Black.copy(0.78f),
     ) {
         Column(
             Modifier.padding(horizontal = 28.dp, vertical = 14.dp),
@@ -775,15 +715,13 @@ private fun SeekPreview(seekDelta: Long, previewMs: Long) {
     }
 }
 
-// ─── Gesture Indicator ────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Gesture Indicator Bar (volume / brightness)
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun GestureIndicatorBar(
-    icon:  androidx.compose.ui.graphics.vector.ImageVector,
-    value: Float,
-    label: String,
-) {
-    Surface(shape = RoundedCornerShape(12.dp), color = Color.Black.copy(alpha = 0.68f)) {
+private fun GestureIndicatorBar(icon: ImageVector, value: Float, label: String) {
+    Surface(shape = RoundedCornerShape(12.dp), color = Color.Black.copy(0.68f)) {
         Column(
             Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -792,22 +730,14 @@ private fun GestureIndicatorBar(
             Icon(icon, null, tint = Color.White, modifier = Modifier.size(22.dp))
             Box(
                 modifier = Modifier
-                    .width(6.dp)
-                    .height(80.dp)
+                    .width(6.dp).height(80.dp)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(Color.White.copy(alpha = 0.3f)),
+                    .background(Color.White.copy(0.3f)),
                 contentAlignment = Alignment.BottomCenter,
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(value)
-                        .background(Color.White)
-                )
+                Box(Modifier.fillMaxWidth().fillMaxHeight(value).background(Color.White))
             }
             Text(label, color = Color.White, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
-
-
