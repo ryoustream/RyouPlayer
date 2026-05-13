@@ -204,11 +204,15 @@ fun PlayerScreen(
         // ── MPV Video Surface ────────────────────────────────────────────────
         // MPVView is a SurfaceView that forwards the Surface to libmpv.
         // mpv renders video AND subtitles (via libass) directly onto this surface.
-        // No separate subtitle overlay is needed for embedded tracks.
-        AndroidView(
-            factory = { ctx -> MPVView(ctx) },
-            modifier = Modifier.fillMaxSize(),
-        )
+        // IMPORTANT: only create MPVView AFTER MPVLib.init() has completed (mpvReady=true).
+        // surfaceCreated fires immediately once the view is attached; calling
+        // attachSurface() before init() is a guaranteed native crash.
+        if (state.mpvReady) {
+            AndroidView(
+                factory = { ctx -> MPVView(ctx) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         // ── mpv missing overlay ──────────────────────────────────────────────
         if (!state.mpvReady && state.error != null) {

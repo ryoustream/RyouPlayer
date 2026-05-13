@@ -23,13 +23,14 @@ class MPVView @JvmOverloads constructor(
     override fun surfaceCreated(h: SurfaceHolder) {
         Log.d(TAG, "surfaceCreated")
         MPVLib.attachSurface(h.surface)
-        // Force mpv to re-draw immediately
-        MPVLib.setPropertyString("vo", "gpu")
+        // Do NOT set "vo" here — it was already set as an option before MPVLib.init()
+        // and calling setPropertyString before the renderer is ready can cause crashes.
     }
 
     override fun surfaceChanged(h: SurfaceHolder, fmt: Int, w: Int, h2: Int) {
         Log.d(TAG, "surfaceChanged ${w}x${h2}")
-        MPVLib.command(arrayOf("set_property", "android-surface-size", "${w}x${h2}"))
+        // "set_property" is not a valid mpv command — use setPropertyString directly.
+        MPVLib.setPropertyString("android-surface-size", "${w}x${h2}")
     }
 
     override fun surfaceDestroyed(h: SurfaceHolder) {
