@@ -47,6 +47,11 @@ android {
     namespace = "com.ryoustream.player"
     compileSdk = 35
 
+    // Pin NDK version so llvm-strip toolchain stays consistent across machines and CI.
+    // r27c (27.2.12479018) is the default bundled with AGP 8.7.x and the version used
+    // to build mpv-android / libass pre-built .so files we depend on.
+    ndkVersion = "27.2.12479018"
+
     defaultConfig {
         applicationId = "com.ryoustream.player"
         minSdk = 31
@@ -159,8 +164,25 @@ android {
             excludes += "META-INF/DEPENDENCIES"
         }
         jniLibs {
-            // These libs ship without symbol tables — mark explicitly to suppress strip warning
+            // ── keepDebugSymbols explanation ──────────────────────────────────
+            // AGP's strip step runs llvm-strip from the pinned NDK to remove debug
+            // symbols from .so files before packaging.  When a .so was built with a
+            // different toolchain (or is already fully stripped), llvm-strip emits:
+            //   "Unable to strip … packaging them as they are"
+            //
+            // Adding a pattern here tells AGP: "skip strip for this lib, include as-is."
+            // The library IS in the APK either way — this just silences the warning
+            // and documents intent.
+            //
+            // libass.so / libasskt.so  — pre-built by peerless2012/libass-android AAR;
+            //   compiled with a pinned older NDK toolchain, already stripped.
+            // libc++_shared.so         — NDK C++ shared runtime; pre-built by Google,
+            //   ships without a strippable debug section.
             keepDebugSymbols += listOf(
+                "**/libass.so",
+                "**/libasskt.so",
+                "**/libc++_shared.so",
+                // Existing pre-stripped Jetpack libs
                 "**/libandroidx.graphics.path.so",
                 "**/libdatastore_shared_counter.so",
             )
