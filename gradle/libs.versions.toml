@@ -111,6 +111,7 @@ media3-effect = { group = "androidx.media3", name = "media3-effect", version.ref
 # libass-android — ASS/SSA subtitle rendering via native libass (Maven Central)
 # https://github.com/peerless2012/libass-android
 libass-kt = { group = "io.github.peerless2012", name = "ass-kt", version.ref = "libass-android" }
+libass-media = { group = "io.github.peerless2012", name = "ass-media", version.ref = "libass-android" }
 
 # Coroutines
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }

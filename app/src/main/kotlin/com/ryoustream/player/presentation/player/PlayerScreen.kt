@@ -222,10 +222,9 @@ fun PlayerScreen(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
-                    // Disable the native SubtitleView entirely.
-                    // All subtitle rendering is handled by AssSubtitleView below,
-                    // which uses libass (JNI) for full ASS/SSA support including
-                    // embedded fonts, animations, and per-cue style overrides.
+                    // Disable ExoPlayer's built-in SubtitleView.
+                    // Embedded ASS/SSA: rendered by AssLibassOverlay (libass JNI) below.
+                    // External files: rendered by AssSubtitleRenderer (Kotlin) below.
                     subtitleView?.visibility = android.view.View.GONE
                 }
             },
@@ -237,33 +236,34 @@ fun PlayerScreen(
                     AspectRatioMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                     else                    -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
-                // Always keep native SubtitleView hidden — we own rendering below
                 view.subtitleView?.visibility = android.view.View.GONE
             },
             modifier = Modifier.fillMaxSize(),
         )
 
-        // ── Unified subtitle overlay (libass JNI + Kotlin fallback) ──────────
-        // Handles ALL subtitle types:
-        //   • Embedded MKV ASS/SSA  → embeddedSubtitleBytes → AssJniRenderer (libass)
-        //   • External .ass/.ssa    → subtitleCues          → AssJniRenderer or Kotlin
-        //   • External .srt/.vtt    → subtitleCues          → Kotlin fallback renderer
-        if (state.subtitleEnabled) {
+        // ── Libass overlay — embedded ASS/SSA from MKV (full styling) ─────────
+        // AssHandler (via ass-media) hooks ExoPlayer's track events and feeds
+        // initializationData + per-dialogue chunks directly into libass.
+        // This preserves fonts, animations, \pos, \move, karaoke, overrides.
+        if (state.subtitleEnabled && state.selectedSubtitleTrack >= 0) {
             val adjustedMs = state.playbackState.currentPosition + state.subtitleDelay
+            AssLibassOverlay(
+                handler    = viewModel.assMediaHandler,
+                positionMs = adjustedMs,
+                modifier   = Modifier.fillMaxSize().padding(bottom = 80.dp),
+            )
+        }
 
-            // Determine raw bytes source: embedded has priority over external cues
-            val rawBytes = state.embeddedSubtitleBytes
-
-            // Show overlay when: (a) embedded bytes available, OR (b) external cues loaded
-            if (rawBytes != null || state.subtitleCues.isNotEmpty()) {
-                AssSubtitleView(
-                    rawBytes   = rawBytes,
-                    cues       = state.subtitleCues,
-                    positionMs = adjustedMs,
-                    style      = state.subtitleStyle,
-                    modifier   = Modifier.fillMaxSize().padding(bottom = 80.dp),
-                )
-            }
+        // ── External subtitle overlay — .ass/.srt loaded by user ─────────────
+        // Uses Kotlin renderer with SubtitleStyle (style sheet changes apply here).
+        if (state.subtitleEnabled && state.subtitleCues.isNotEmpty()) {
+            val adjustedMs = state.playbackState.currentPosition + state.subtitleDelay
+            AssSubtitleRenderer(
+                cues        = state.subtitleCues,
+                positionMs  = adjustedMs,
+                style       = state.subtitleStyle,
+                modifier    = Modifier.fillMaxSize().padding(bottom = 80.dp),
+            )
         }
 
         // ── Seek preview ──────────────────────────────────────────────────

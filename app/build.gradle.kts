@@ -230,6 +230,7 @@ dependencies {
     // ASS/SSA subtitle rendering — libass via JNI (Maven Central)
     // https://github.com/peerless2012/libass-android
     implementation(libs.libass.kt)
+    implementation(libs.libass.media)
 
     // Coroutines
     implementation(libs.coroutines.core)

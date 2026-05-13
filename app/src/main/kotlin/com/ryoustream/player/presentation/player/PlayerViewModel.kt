@@ -69,9 +69,6 @@ data class PlayerUiState(
     val subtitleTracks: List<TrackInfo>       = emptyList(),
     val selectedSubtitleTrack: Int            = -1,
     val subtitleDelay: Long                   = 0L,
-    /** Raw bytes of the embedded ASS/SSA track extracted from the container.
-     *  Null when no embedded ASS track is active. Fed to [AssJniRenderer]. */
-    val embeddedSubtitleBytes: ByteArray?     = null,
     // Audio
     val audioTracks: List<TrackInfo>          = emptyList(),
     val selectedAudioTrack: Int               = 0,
@@ -108,6 +105,9 @@ class PlayerViewModel @Inject constructor(
 
     private val _player = MutableStateFlow<ExoPlayer?>(null)
     val player: StateFlow<ExoPlayer?> = _player.asStateFlow()
+
+    /** Drives libass rendering for embedded ASS/SSA tracks. Created once with the player. */
+    val assMediaHandler = AssMediaHandler()
 
     private var positionJob: Job? = null
     private var hideJob: Job? = null
@@ -182,9 +182,10 @@ class PlayerViewModel @Inject constructor(
             .build()
             .also {
                 it.addListener(playerListener)
-                // Ensure volume is at max on init
                 it.volume = 1f
             }
+        // Attach libass handler BEFORE setting media so it catches onTracksChanged
+        assMediaHandler.attach(exo)
         _player.value = exo
     }
 
@@ -309,12 +310,8 @@ class PlayerViewModel @Inject constructor(
             subtitleEnabled       = true,
             selectedSubtitleTrack = info.index,
             subtitleCues          = emptyList(), // clear external cues when embedded selected
-            embeddedSubtitleBytes = null,        // reset — will be repopulated below
             subtitleTracks = it.subtitleTracks.map { t -> t.copy(isSelected = t.index == info.index) }
         )}
-        // Extract raw ASS bytes from the container so libass (JNI path) can render
-        // all embedded fonts, animations, and override tags faithfully
-        currentUri?.let { uri -> extractEmbeddedSubtitleBytes(uri) }
     }
 
     // ─── External Subtitle Loading ────────────────────────────────────────────
@@ -343,32 +340,6 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Extract raw ASS/SSA bytes from the MKV/video file for the currently
-     * selected embedded subtitle track. The bytes are passed to [AssJniRenderer]
-     * (libass JNI path) so that fonts, animations, and all override tags defined
-     * in the embedded script are rendered correctly — instead of using ExoPlayer's
-     * native SubtitleView which strips most styling.
-     *
-     * Strategy: open the video URI as a stream, search for the UTF-8 ASS header
-     * "[Script Info]", and slice out the complete script from that offset.
-     * This works for soft-subtitled MKV files where the track is stored in UTF-8.
-     */
-    private fun extractEmbeddedSubtitleBytes(uri: Uri) {
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val bytes   = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
-                val content = bytes.toString(Charsets.UTF_8)
-                val start   = content.indexOf("[Script Info]")
-                if (start >= 0) {
-                    val assBytes = content.substring(start).toByteArray(Charsets.UTF_8)
-                    _state.update { it.copy(embeddedSubtitleBytes = assBytes) }
-                }
-            } catch (_: Exception) {
-                // Extraction failed — libass will fall back to Kotlin renderer
-            }
-        }
-    }
 
     fun loadExternalSubtitleFromUri(uri: Uri) {
         viewModelScope.launch {
@@ -558,7 +529,11 @@ class PlayerViewModel @Inject constructor(
         savePosition()
         stopPositionUpdates()
         hideJob?.cancel()
-        _player.value?.apply { removeListener(playerListener); release() }
+        _player.value?.apply {
+            removeListener(playerListener)
+            release()
+        }
+        assMediaHandler.detach(_player.value)
         _player.value = null
         super.onCleared()
     }
