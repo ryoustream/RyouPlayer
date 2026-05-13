@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import com.ryoustream.player.domain.model.NetworkStream
 import com.ryoustream.player.presentation.home.HomeScreen
 import com.ryoustream.player.presentation.library.LibraryScreen
 import com.ryoustream.player.presentation.player.PlayerScreen
@@ -66,14 +67,16 @@ fun RyouNavGraph(
         composable(Screen.Home.route) {
             HomeScreen(
                 onMediaClick = { mediaItem ->
-                    navController.navigate(
-                        Screen.Player.createRoute(mediaItem.uri.toString())
-                    )
+                    navController.navigate(Screen.Player.createRoute(mediaItem.uri.toString()))
                 },
                 onFolderClick = { folder ->
-                    navController.navigate(
-                        Screen.FolderDetail.createRoute(folder.id, folder.name)
-                    )
+                    navController.navigate(Screen.FolderDetail.createRoute(folder.id, folder.name))
+                },
+                onPlaylistClick = { playlist ->
+                    navController.navigate(Screen.PlaylistDetail.createRoute(playlist.id))
+                },
+                onStreamClick = { stream ->
+                    navController.navigate(Screen.Player.createRoute(stream.url))
                 },
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
@@ -134,6 +137,12 @@ fun RyouNavGraph(
                     navController.navigate(Screen.Player.createRoute(mediaItem.uri.toString()))
                 },
                 onFolderClick = {},
+                onPlaylistClick = { playlist ->
+                    navController.navigate(Screen.PlaylistDetail.createRoute(playlist.id))
+                },
+                onStreamClick = { stream ->
+                    navController.navigate(Screen.Player.createRoute(stream.url))
+                },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
                 onBack = { navController.popBackStack() },
             )

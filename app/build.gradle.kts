@@ -71,6 +71,11 @@ android {
             arg("room.incremental", "true")
         }
 
+        // Limit to modern 64-bit ARM only: armv8 (arm64-v8a) covers both ARMv8 and ARMv9 cores
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+
     }
 
     // ─── Signing ──────────────────────────────────────────────────────────────
