@@ -63,11 +63,6 @@ jobs:
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
 
-      - name: 📦 Download libass prebuilt (best-effort)
-        run: |
-          chmod +x scripts/download_libass.sh
-          ./scripts/download_libass.sh || echo "⚠️  libass download skipped — stub renderer will be used"
-
       - name: 🔧 Generate Gradle Wrapper
         run: |
           echo "System Gradle version:"
@@ -172,11 +167,6 @@ jobs:
           echo "BUILD_DATE=${BUILD_DATE}"     >> $GITHUB_OUTPUT
           echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
-
-      - name: 📦 Download libass prebuilt (best-effort)
-        run: |
-          chmod +x scripts/download_libass.sh
-          ./scripts/download_libass.sh || echo "⚠️  libass download skipped"
 
       - name: 🔧 Generate Gradle Wrapper
         run: |

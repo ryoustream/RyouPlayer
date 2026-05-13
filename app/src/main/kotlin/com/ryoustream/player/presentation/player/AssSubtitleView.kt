@@ -23,14 +23,15 @@ import kotlinx.coroutines.withContext
  * 1. **JNI path** — [AssJniRenderer] available (libass native loaded from `ass-kt` AAR).
  *    `renderFrame()` returns [AssFrame] containing `Array<AssTex>`, each with a
  *    pre-rendered Bitmap and its screen position (x, y). Composited via Canvas.
+ *    Full embedded fonts, animations, and ASS override tags are preserved.
  *
  * 2. **Kotlin fallback** — libass failed to load. Delegates to [AssSubtitleRenderer]
- *    (pure-Kotlin Canvas-based outline renderer). Zero native dependency.
+ *    (pure-Kotlin Canvas-based outline renderer). [SubtitleStyle] is applied here.
  *
- * @param rawBytes   Full bytes of the .ass / .ssa file.
+ * @param rawBytes   Full bytes of the .ass / .ssa file (embedded or external).
  * @param cues       Pre-parsed cue list — used only by the Kotlin fallback path.
  * @param positionMs Current playback position in milliseconds.
- * @param style      Visual style for the Kotlin fallback renderer.
+ * @param style      Visual style; applied by the Kotlin fallback renderer.
  */
 @Composable
 fun AssSubtitleView(
@@ -52,6 +53,7 @@ fun AssSubtitleView(
             modifier   = modifier,
         )
     } else {
+        // Kotlin fallback — SubtitleStyle is fully respected here
         AssSubtitleRenderer(
             cues       = cues,
             positionMs = positionMs,
