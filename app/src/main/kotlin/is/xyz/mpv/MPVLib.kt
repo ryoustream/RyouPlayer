@@ -40,9 +40,11 @@ object MPVLib {
      * @param context Application context (used for font / cache dir resolution)
      * @param logLvl  mpv log level: "warn", "error", "info", "debug", "v"
      */
-    fun create(context: Context, logLvl: String = "warn") {
+    // Wrapper — keeps isAvailable guard; external MUST be named "create" to match
+    // the JNI symbol Java_is_xyz_mpv_MPVLib_create baked into libmpv.so.
+    fun setup(context: Context, logLvl: String = "warn") {
         if (!isAvailable) return
-        nativeCreate(
+        create(
             context.applicationContext,
             context.filesDir.absolutePath,
             context.cacheDir.absolutePath,
@@ -50,7 +52,7 @@ object MPVLib {
         )
     }
 
-    @JvmStatic external fun nativeCreate(context: Context, configDir: String, cacheDir: String, logLvl: String)
+    @JvmStatic external fun create(context: Context, configDir: String, cacheDir: String, logLvl: String)
     @JvmStatic external fun init()
     @JvmStatic external fun destroy()
 
@@ -70,13 +72,16 @@ object MPVLib {
 
     // ── Properties ────────────────────────────────────────────────────────────
 
-    @JvmStatic external fun getPropertyInt(property: String): Int?
+    // Primitive getters MUST be non-nullable — native returns jint/jboolean/jdouble.
+    // Nullable boxing (Int?) changes the JNI signature to Ljava/lang/Integer; which
+    // doesn't match the native symbol → NoSuchMethodError crash at runtime.
+    @JvmStatic external fun getPropertyInt(property: String): Int
     @JvmStatic external fun setPropertyInt(property: String, value: Int)
-    @JvmStatic external fun getPropertyBoolean(property: String): Boolean?
+    @JvmStatic external fun getPropertyBoolean(property: String): Boolean
     @JvmStatic external fun setPropertyBoolean(property: String, value: Boolean)
     @JvmStatic external fun getPropertyString(property: String): String?
     @JvmStatic external fun setPropertyString(property: String, value: String)
-    @JvmStatic external fun getPropertyDouble(property: String): Double?
+    @JvmStatic external fun getPropertyDouble(property: String): Double
     @JvmStatic external fun setPropertyDouble(property: String, value: Double)
 
     // ── Property observation ──────────────────────────────────────────────────

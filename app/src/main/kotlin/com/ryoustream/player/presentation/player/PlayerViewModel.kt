@@ -114,7 +114,7 @@ class PlayerViewModel @Inject constructor(
         }
         MPVLib.addObserver(this)
 
-        MPVLib.create(context, "warn")
+        MPVLib.setup(context, "warn")
 
         // ── Core mpv options (set before init) ─────────────────────────────
         MPVLib.setOptionString("vo",              "gpu")
