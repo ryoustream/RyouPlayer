@@ -7,13 +7,13 @@ import android.view.Surface
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * MPVLib — JNI bridge to libmpv (libmpv.so from mpv-android).
+ * MPVLib — JNI bridge to libmpv (libplayer.so from mpv-android).
  *
  * Package and class name MUST stay `is.xyz.mpv.MPVLib` to match the JNI
- * symbol table baked into the prebuilt `libmpv.so`:
+ * symbol table baked into the prebuilt `libplayer.so`:
  *   Java_is_xyz_mpv_MPVLib_init, Java_is_xyz_mpv_MPVLib_command, …
  *
- * Setup: put `libmpv.so` in app/src/main/jniLibs/arm64-v8a/
+ * Setup: put `libplayer.so` in app/src/main/jniLibs/arm64-v8a/
  * Download: run scripts/download_mpv_libs.sh
  */
 object MPVLib {
@@ -25,10 +25,10 @@ object MPVLib {
 
     init {
         isAvailable = try {
-            System.loadLibrary("mpv")
+            System.loadLibrary("player")
             true
         } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "libmpv.so not found — run scripts/download_mpv_libs.sh then rebuild. ${e.message}")
+            Log.e(TAG, "libplayer.so not found — run scripts/download_mpv_libs.sh then rebuild. ${e.message}")
             false
         }
     }
@@ -41,7 +41,7 @@ object MPVLib {
      * @param logLvl  mpv log level: "warn", "error", "info", "debug", "v"
      */
     // Wrapper — keeps isAvailable guard; external MUST be named "create" to match
-    // the JNI symbol Java_is_xyz_mpv_MPVLib_create baked into libmpv.so.
+    // the JNI symbol Java_is_xyz_mpv_MPVLib_create baked into libplayer.so.
     fun setup(context: Context, logLvl: String = "warn") {
         if (!isAvailable) return
         create(

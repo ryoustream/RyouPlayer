@@ -2,11 +2,11 @@
 # ────────────────────────────────────────────────────────────────────────────
 # download_mpv_libs.sh
 #
-# Downloads libmpv.so (+ ffmpeg + libass built for Android) from the
+# Downloads libplayer.so (+ ffmpeg + libass built for Android) from the
 # official mpv-android release APK and places it where the app expects it:
 #   app/src/main/jniLibs/arm64-v8a/
 #
-# MPVLib.kt loads it via System.loadLibrary("mpv") → libmpv.so directly.
+# MPVLib.kt loads it via System.loadLibrary("player") → libplayer.so directly.
 # No renaming needed.
 #
 # Run once before building:
@@ -30,9 +30,9 @@ echo "▶  Extracting native libs…"
 mkdir -p "${JNI_OUT}"
 unzip -jo "${TMP_DIR}/mpv.apk" "lib/arm64-v8a/*.so" -d "${JNI_OUT}"
 
-echo "▶  Verifying libmpv.so…"
-if [ ! -f "${JNI_OUT}/libmpv.so" ]; then
-    echo "   ⚠️  libmpv.so not found — listing extracted files:"
+echo "▶  Verifying libplayer.so…"
+if [ ! -f "${JNI_OUT}/libplayer.so" ]; then
+    echo "   ⚠️  libplayer.so not found — listing extracted files:"
     ls -lh "${JNI_OUT}"/*.so || true
     exit 1
 fi
