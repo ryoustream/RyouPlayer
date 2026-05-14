@@ -72,17 +72,30 @@ object MPVLib {
 
     // ── Properties ────────────────────────────────────────────────────────────
 
-    // Primitive getters MUST be non-nullable — native returns jint/jboolean/jdouble.
-    // Nullable boxing (Int?) changes the JNI signature to Ljava/lang/Integer; which
-    // doesn't match the native symbol → NoSuchMethodError crash at runtime.
-    @JvmStatic external fun getPropertyInt(property: String): Int
-    @JvmStatic external fun setPropertyInt(property: String, value: Int)
-    @JvmStatic external fun getPropertyBoolean(property: String): Boolean
-    @JvmStatic external fun setPropertyBoolean(property: String, value: Boolean)
+    // ── Properties ────────────────────────────────────────────────────────────
+    //
+    // ALL getters return jobject (boxed, nullable) in native — NOT primitives.
+    //   jni_func(jobject, getPropertyInt, ...)   → Integer | null
+    //   jni_func(jobject, getPropertyDouble, ...) → Double  | null
+    //   jni_func(jobject, getPropertyBoolean, ...) → Boolean | null
+    //
+    // ALL setters take jobject (boxed) in native:
+    //   jni_func(void, setPropertyInt, jstring, jobject)   → Integer
+    //   jni_func(void, setPropertyDouble, jstring, jobject) → Double
+    //   jni_func(void, setPropertyBoolean, jstring, jobject) → Boolean
+    //
+    // Declaring as non-nullable primitive (Int/Boolean/Double) changes the JVM
+    // signature from Ljava/lang/Integer; to I, etc. The native setter then
+    // receives the raw integer (e.g. 1 for true, 100 for volume) and tries to
+    // use it as a Java object pointer → dereferences address 0x1 → SIGSEGV.
+    @JvmStatic external fun getPropertyInt(property: String): Int?
+    @JvmStatic external fun setPropertyInt(property: String, value: Int?)
+    @JvmStatic external fun getPropertyBoolean(property: String): Boolean?
+    @JvmStatic external fun setPropertyBoolean(property: String, value: Boolean?)
     @JvmStatic external fun getPropertyString(property: String): String?
     @JvmStatic external fun setPropertyString(property: String, value: String)
-    @JvmStatic external fun getPropertyDouble(property: String): Double
-    @JvmStatic external fun setPropertyDouble(property: String, value: Double)
+    @JvmStatic external fun getPropertyDouble(property: String): Double?
+    @JvmStatic external fun setPropertyDouble(property: String, value: Double?)
 
     // ── Property observation ──────────────────────────────────────────────────
 

@@ -2,15 +2,18 @@ package `is`.xyz.mpv
 
 /**
  * Kotlin-friendly helpers on top of MPVLib.
+ *
+ * All MPVLib property getters return nullable boxed types (Int?, Boolean?, Double?)
+ * matching the native jobject return. Use ?. operators throughout.
  */
 
 /** Read duration (seconds). Returns 0 when not available. */
 fun MPVLib.getDurationSec(): Long =
-    runCatching { getPropertyInt("duration").toLong() }.getOrDefault(0L)
+    runCatching { getPropertyDouble("duration")?.toLong() }.getOrNull() ?: 0L
 
 /** Read current position (seconds). */
 fun MPVLib.getTimeSec(): Long =
-    runCatching { getPropertyDouble("time-pos").toLong() }.getOrDefault(0L)
+    runCatching { getPropertyDouble("time-pos")?.toLong() }.getOrNull() ?: 0L
 
 /** Read current position (milliseconds). */
 fun MPVLib.getTimeMs(): Long = getTimeSec() * 1000L
