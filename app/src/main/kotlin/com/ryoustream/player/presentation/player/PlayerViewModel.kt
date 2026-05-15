@@ -19,6 +19,7 @@ import `is`.xyz.mpv.addSubtitleUri
 import `is`.xyz.mpv.disableTrack
 import `is`.xyz.mpv.getDurationMs
 import `is`.xyz.mpv.getTimeMs
+import `is`.xyz.mpv.loadFile
 import `is`.xyz.mpv.pause
 import `is`.xyz.mpv.seekTo
 import `is`.xyz.mpv.selectTrack

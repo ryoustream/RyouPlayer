@@ -179,11 +179,20 @@ android {
             // libc++_shared.so         — NDK C++ shared runtime; pre-built by Google,
             //   ships without a strippable debug section.
             keepDebugSymbols += listOf(
-                "**/libplayer.so",          // prebuilt from mpv-android, already stripped
+                // mpv + ffmpeg pre-built libs from mpv-android — already stripped at source
+                "**/libmpv.so",
+                "**/libavcodec.so",
+                "**/libavdevice.so",
+                "**/libavfilter.so",
+                "**/libavformat.so",
+                "**/libavutil.so",
+                "**/libswresample.so",
+                "**/libswscale.so",
+                // libass / libc++ pre-built
                 "**/libass.so",
                 "**/libasskt.so",
                 "**/libc++_shared.so",
-                // Existing pre-stripped Jetpack libs
+                // Jetpack pre-stripped
                 "**/libandroidx.graphics.path.so",
                 "**/libdatastore_shared_counter.so",
             )
