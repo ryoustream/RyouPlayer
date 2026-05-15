@@ -107,42 +107,50 @@ class PlayerViewModel @Inject constructor(
     // ─── Init ─────────────────────────────────────────────────────────────────
 
     fun initializePlayer() {
-        if (!MPVLib.isAvailable) {
-            _state.update { it.copy(error = "libplayer.so not found.\nRun scripts/download_mpv_libs.sh and rebuild.") }
-            Log.e(TAG, "MPVLib not available — libplayer-lib.so missing")
+        // tryLoad() does System.loadLibrary("mpv") — must succeed before ANY JNI call
+        if (!MPVLib.tryLoad()) {
+            _state.update { it.copy(error = "libmpv.so not found.\nRun scripts/download_mpv_libs.sh and rebuild.") }
+            Log.e(TAG, "MPVLib not available — libmpv.so missing from jniLibs")
             return
         }
         MPVLib.addObserver(this)
 
-        MPVLib.setup(context, "warn")
+        // create() is the direct JNI external — symbol: Java_is_xyz_mpv_MPVLib_create
+        // MUST pass nullable Context as first arg (exactly as mpv-android native expects)
+        MPVLib.create(
+            context.applicationContext,
+            context.filesDir.absolutePath,
+            context.cacheDir.absolutePath,
+            "warn",
+        )
 
         // ── Core mpv options (set before init) ─────────────────────────────
-        MPVLib.setOptionString("vo",              "gpu")
-        MPVLib.setOptionString("gpu-context",     "android")
-        MPVLib.setOptionString("opengl-es",       "yes")
-        MPVLib.setOptionString("hwdec",           "mediacodec-copy")
-        MPVLib.setOptionString("hwdec-codecs",    "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
-        MPVLib.setOptionString("ao",              "audiotrack,opensles")
-        MPVLib.setOptionString("tls-verify",      "no")         // for streams
-        MPVLib.setOptionString("demuxer-max-bytes","128MiB")
+        MPVLib.setOptionString("vo",               "gpu")
+        MPVLib.setOptionString("gpu-context",      "android")
+        MPVLib.setOptionString("opengl-es",        "yes")
+        MPVLib.setOptionString("hwdec",            "mediacodec-copy")
+        MPVLib.setOptionString("hwdec-codecs",     "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
+        MPVLib.setOptionString("ao",               "audiotrack,opensles")
+        MPVLib.setOptionString("tls-verify",       "no")
+        MPVLib.setOptionString("demuxer-max-bytes", "128MiB")
         MPVLib.setOptionString("demuxer-readahead-secs", "10")
-        MPVLib.setOptionString("cache",           "yes")
-        MPVLib.setOptionString("cache-secs",      "30")
-        // ── Subtitle defaults ───────────────────────────────────────────────
-        MPVLib.setOptionString("sub-auto",        "fuzzy")
-        MPVLib.setOptionString("blend-subtitles", "no")
-        MPVLib.setOptionString("sub-ass",         "yes")
-        MPVLib.setOptionString("sub-ass-override", "no")       // respect .ass style
-        MPVLib.setOptionString("sub-font-size",   "40")
-        MPVLib.setOptionString("sub-border-size", "2.5")
-        MPVLib.setOptionString("sub-color",       "#FFFFFFFF")
-        MPVLib.setOptionString("sub-border-color","#FF000000")
+        MPVLib.setOptionString("cache",            "yes")
+        MPVLib.setOptionString("cache-secs",       "30")
+        // ── Subtitle — mpv renders via libass onto the video surface ────────
+        MPVLib.setOptionString("sub-auto",         "fuzzy")
+        MPVLib.setOptionString("blend-subtitles",  "no")
+        MPVLib.setOptionString("sub-ass",          "yes")
+        MPVLib.setOptionString("sub-ass-override", "no")   // respect embedded .ass styles
+        MPVLib.setOptionString("sub-font-size",    "40")
+        MPVLib.setOptionString("sub-border-size",  "2.5")
+        MPVLib.setOptionString("sub-color",        "#FFFFFFFF")
+        MPVLib.setOptionString("sub-border-color", "#FF000000")
         MPVLib.setOptionString("sub-shadow-offset","1")
-        MPVLib.setOptionString("sub-shadow-color","#80000000")
-        MPVLib.setOptionString("sub-margin-y",    "36")
+        MPVLib.setOptionString("sub-shadow-color", "#80000000")
+        MPVLib.setOptionString("sub-margin-y",     "36")
         // ── Video quality ──────────────────────────────────────────────────
-        MPVLib.setOptionString("video-sync",      "audio")
-        MPVLib.setOptionString("interpolation",   "no")
+        MPVLib.setOptionString("video-sync",       "audio")
+        MPVLib.setOptionString("interpolation",    "no")
 
         MPVLib.init()
 
@@ -172,7 +180,7 @@ class PlayerViewModel @Inject constructor(
 
     fun playUri(uri: Uri, startPosition: Long = 0L) {
         if (!MPVLib.isAvailable) return
-        if (_state.value.mpvReady.not()) { pendingUri = uri; return }
+        if (!_state.value.mpvReady) { pendingUri = uri; return }
 
         viewModelScope.launch {
             val domainItem = getMediaByUriUseCase(uri)
@@ -180,24 +188,18 @@ class PlayerViewModel @Inject constructor(
 
             _state.update {
                 it.copy(
-                    mediaTitle = domainItem?.displayName ?: uri.lastPathSegment ?: "",
+                    mediaTitle    = domainItem?.displayName ?: uri.lastPathSegment ?: "",
                     playbackState = it.playbackState.copy(mediaItem = domainItem),
                 )
             }
 
-            val path = when {
-                uri.scheme == "content" -> uri.toString()   // mpv handles content:// URIs
-                uri.scheme == "file"    -> uri.path ?: uri.toString()
-                else                    -> uri.toString()   // http/rtsp/hls etc.
+            val path = when (uri.scheme) {
+                "content" -> uri.toString()   // mpv handles content:// URIs natively
+                "file"    -> uri.path ?: uri.toString()
+                else      -> uri.toString()   // http/rtsp/hls/etc.
             }
 
-            MPVLib.command(arrayOf("loadfile", path))
-
-            if (startPosition > 0L) {
-                // Seek after file-loaded event
-                _pendingSeekMs = startPosition
-            }
-
+            MPVLib.loadFile(path, startPosition)
             showControlsTemporarily()
             startPositionUpdates()
         }
@@ -555,8 +557,8 @@ class PlayerViewModel @Inject constructor(
         hideJob?.cancel()
         if (MPVLib.isAvailable) {
             MPVLib.removeObserver(this)
-            MPVLib.command(arrayOf("stop"))
-            MPVLib.destroy()
+            runCatching { MPVLib.command(arrayOf("stop")) }
+            runCatching { MPVLib.destroy() }
         }
         super.onCleared()
     }

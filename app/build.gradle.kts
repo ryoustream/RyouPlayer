@@ -244,21 +244,14 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // Media3 ExoPlayer
-    implementation(libs.media3.exoplayer)
-    implementation(libs.media3.exoplayer.hls)
-    implementation(libs.media3.exoplayer.dash)
-    implementation(libs.media3.exoplayer.rtsp)
-    implementation(libs.media3.ui)
-    implementation(libs.media3.session)
+    // Media3 — only media-common + session kept for MediaSessionCompat in RyouPlaybackService.
+    // ExoPlayer, HLS, DASH, RTSP, UI, datasource removed — mpv handles all playback.
     implementation(libs.media3.common)
-    implementation(libs.media3.datasource)
-    implementation(libs.media3.datasource.okhttp)
+    implementation(libs.media3.session)
 
-    // ASS/SSA subtitle rendering — libass via JNI (Maven Central)
-    // https://github.com/peerless2012/libass-android
-    implementation(libs.libass.kt)
-    implementation(libs.libass.media)
+    // NOTE: libass-kt / libass-media removed.
+    // mpv renders subtitles (SRT, ASS, SSA, PGS, VTT) internally via its
+    // bundled libass. No separate Android libass wrapper needed.
 
     // Coroutines
     implementation(libs.coroutines.core)

@@ -1,66 +1,60 @@
 package `is`.xyz.mpv
 
-/**
- * Kotlin-friendly helpers on top of MPVLib.
- *
- * All MPVLib property getters return nullable boxed types (Int?, Boolean?, Double?)
- * matching the native jobject return. Use ?. operators throughout.
- */
+import android.util.Log
 
-/** Read duration (seconds). Returns 0 when not available. */
-fun MPVLib.getDurationSec(): Long =
-    runCatching { getPropertyDouble("duration")?.toLong() }.getOrNull() ?: 0L
+private const val TAG = "MpvKtx"
 
-/** Read current position (seconds). */
-fun MPVLib.getTimeSec(): Long =
-    runCatching { getPropertyDouble("time-pos")?.toLong() }.getOrNull() ?: 0L
+// ─── Safe wrappers ────────────────────────────────────────────────────────────
+// All helpers return safe defaults rather than throwing if mpv is not ready.
 
-/** Read current position (milliseconds). */
-fun MPVLib.getTimeMs(): Long = getTimeSec() * 1000L
+fun MPVLib.getDurationMs(): Long =
+    runCatching { getPropertyDouble("duration")?.let { (it * 1000).toLong() } }.getOrNull() ?: 0L
 
-/** Read duration (milliseconds). */
-fun MPVLib.getDurationMs(): Long = getDurationSec() * 1000L
+fun MPVLib.getTimeMs(): Long =
+    runCatching { getPropertyDouble("time-pos")?.let { (it * 1000).toLong() } }.getOrNull() ?: 0L
 
-/** Pause / resume. */
-fun MPVLib.pause(paused: Boolean) = setPropertyBoolean("pause", paused)
+fun MPVLib.pause(paused: Boolean) =
+    runCatching { setPropertyBoolean("pause", paused) }.onFailure { Log.w(TAG, "pause: $it") }
 
-/** Seek to absolute position in seconds. */
 fun MPVLib.seekTo(posMs: Long) {
     val sec = posMs / 1000.0
-    command(arrayOf("seek", sec.toString(), "absolute", "exact"))
+    runCatching { command(arrayOf("seek", sec.toString(), "absolute", "exact")) }
+        .onFailure { Log.w(TAG, "seekTo: $it") }
 }
 
-/** Set playback speed multiplier. */
-fun MPVLib.setSpeed(speed: Double) = setPropertyDouble("speed", speed)
+fun MPVLib.setSpeed(speed: Double) =
+    runCatching { setPropertyDouble("speed", speed) }.onFailure { Log.w(TAG, "speed: $it") }
 
-/** Set/get volume (0–100). */
-fun MPVLib.setVolumePct(pct: Int) = setPropertyInt("volume", pct.coerceIn(0, 100))
+fun MPVLib.setVolumePct(pct: Int) =
+    runCatching { setPropertyInt("volume", pct.coerceIn(0, 200)) }
+        .onFailure { Log.w(TAG, "volume: $it") }
 
-/** Get track-list as raw string (for parsing). */
-fun MPVLib.getTrackList(): String = getPropertyString("track-list") ?: "[]"
-
-/** Select a track by ID. type = "audio" | "sub" | "video". */
 fun MPVLib.selectTrack(type: String, trackId: Int) {
-    val prop = when (type) {
-        "audio" -> "aid"
-        "sub"   -> "sid"
-        else    -> "vid"
-    }
-    setPropertyInt(prop, trackId)
+    val prop = when (type) { "audio" -> "aid"; "sub" -> "sid"; else -> "vid" }
+    runCatching { setPropertyInt(prop, trackId) }.onFailure { Log.w(TAG, "selectTrack: $it") }
 }
 
-/** Disable a track type. */
 fun MPVLib.disableTrack(type: String) {
     val prop = when (type) { "audio" -> "aid"; "sub" -> "sid"; else -> "vid" }
-    setPropertyString(prop, "no")
+    runCatching { setPropertyString(prop, "no") }.onFailure { Log.w(TAG, "disableTrack: $it") }
 }
 
-/** Load an external subtitle file. */
-fun MPVLib.addSubtitleFile(path: String) {
-    command(arrayOf("sub-add", path, "select"))
-}
-
-/** Load an external subtitle from content:// URI via mpv's sub-add. */
 fun MPVLib.addSubtitleUri(uri: String) {
-    command(arrayOf("sub-add", uri, "select"))
+    runCatching { command(arrayOf("sub-add", uri, "select")) }
+        .onFailure { Log.w(TAG, "sub-add: $it") }
+}
+
+fun MPVLib.loadFile(path: String, startMs: Long = 0L) {
+    if (startMs > 0L) {
+        runCatching {
+            command(arrayOf("loadfile", path, "replace",
+                "0", "start=${startMs / 1000.0}"))
+        }.onFailure {
+            // Fallback: plain loadfile, then seek on file-loaded
+            runCatching { command(arrayOf("loadfile", path)) }
+        }
+    } else {
+        runCatching { command(arrayOf("loadfile", path)) }
+            .onFailure { Log.e(TAG, "loadfile: $it") }
+    }
 }

@@ -7,14 +7,24 @@ import android.view.Surface
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * MPVLib — JNI bridge to libmpv (libplayer.so from mpv-android).
+ * MPVLib — JNI bridge to libmpv.so from mpv-android.
  *
- * Package and class name MUST stay `is.xyz.mpv.MPVLib` to match the JNI
- * symbol table baked into the prebuilt `libplayer.so`:
- *   Java_is_xyz_mpv_MPVLib_init, Java_is_xyz_mpv_MPVLib_command, …
+ * CRITICAL: Every `external fun` name here maps directly to a JNI C symbol:
+ *   `create`      → Java_is_xyz_mpv_MPVLib_create
+ *   `init`        → Java_is_xyz_mpv_MPVLib_init
+ *   `command`     → Java_is_xyz_mpv_MPVLib_command
+ *   etc.
  *
- * Setup: put `libplayer.so` in app/src/main/jniLibs/arm64-v8a/
- * Download: run scripts/download_mpv_libs.sh
+ * The function names, return types, and parameter types MUST match exactly
+ * what is compiled into libmpv.so. If ANY name or signature differs,
+ * System.loadLibrary will succeed but calling the function will throw
+ * UnsatisfiedLinkError at runtime → isAvailable = false → blank screen.
+ *
+ * This interface mirrors mpv-android 2026-04-25 exactly.
+ * Source: https://github.com/mpv-android/mpv-android/blob/master/app/src/main/java/is/xyz/mpv/MPVLib.kt
+ *
+ * Setup: run scripts/download_mpv_libs.sh once before building.
+ * Library name: libmpv.so  →  System.loadLibrary("mpv")
  */
 object MPVLib {
 
@@ -23,83 +33,68 @@ object MPVLib {
     var isAvailable: Boolean = false
         private set
 
-    init {
+    fun tryLoad(): Boolean {
+        if (isAvailable) return true
         isAvailable = try {
-            System.loadLibrary("player")
+            System.loadLibrary("mpv")
+            Log.i(TAG, "libmpv.so loaded successfully")
             true
         } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "libplayer.so not found — run scripts/download_mpv_libs.sh then rebuild. ${e.message}")
+            Log.e(TAG, "libmpv.so missing — run scripts/download_mpv_libs.sh and rebuild: ${e.message}")
             false
         }
+        return isAvailable
     }
 
-    // ── Init / Destroy ────────────────────────────────────────────────────────
+    // ── JNI external functions ────────────────────────────────────────────────
+    // These names MUST match the C symbols in libmpv.so exactly.
+    // Return types MUST match: command/setOptionString return Int (mpv error code).
 
-    /**
-     * Create mpv context. Call ONCE before [init].
-     * @param context Application context (used for font / cache dir resolution)
-     * @param logLvl  mpv log level: "warn", "error", "info", "debug", "v"
-     */
-    // Wrapper — keeps isAvailable guard; external MUST be named "create" to match
-    // the JNI symbol Java_is_xyz_mpv_MPVLib_create baked into libplayer.so.
-    fun setup(context: Context, logLvl: String = "warn") {
-        if (!isAvailable) return
-        create(
-            context.applicationContext,
-            context.filesDir.absolutePath,
-            context.cacheDir.absolutePath,
-            logLvl,
-        )
-    }
+    /** Create the mpv context. Call once before [init]. */
+    @JvmStatic external fun create(
+        ctx:       Context?,
+        configDir: String,
+        cacheDir:  String,
+        logLvl:    String,
+    )
 
-    @JvmStatic external fun create(context: Context, configDir: String, cacheDir: String, logLvl: String)
+    /** Initialize mpv with the options set via [setOptionString]. */
     @JvmStatic external fun init()
+
+    /** Destroy the mpv context. */
     @JvmStatic external fun destroy()
 
-    // ── Surface attachment ────────────────────────────────────────────────────
+    // ── Surface ───────────────────────────────────────────────────────────────
 
     @JvmStatic external fun attachSurface(surface: Surface)
     @JvmStatic external fun detachSurface()
 
-    // ── Playback commands ─────────────────────────────────────────────────────
+    // ── Command ───────────────────────────────────────────────────────────────
 
-    /** Send an mpv command, e.g. `command(arrayOf("loadfile", path))` */
-    @JvmStatic external fun command(args: Array<String>)
+    /** Run an mpv command. Returns mpv error code (0 = success). */
+    @JvmStatic external fun command(args: Array<String?>): Int
 
-    // ── Options (set BEFORE init) ─────────────────────────────────────────────
+    // ── Options ───────────────────────────────────────────────────────────────
 
-    @JvmStatic external fun setOptionString(name: String, value: String)
+    /** Set an mpv option string BEFORE [init]. Returns mpv error code. */
+    @JvmStatic external fun setOptionString(name: String, value: String): Int
 
     // ── Properties ────────────────────────────────────────────────────────────
 
-    // ── Properties ────────────────────────────────────────────────────────────
-    //
-    // ALL getters return jobject (boxed, nullable) in native — NOT primitives.
-    //   jni_func(jobject, getPropertyInt, ...)   → Integer | null
-    //   jni_func(jobject, getPropertyDouble, ...) → Double  | null
-    //   jni_func(jobject, getPropertyBoolean, ...) → Boolean | null
-    //
-    // ALL setters take jobject (boxed) in native:
-    //   jni_func(void, setPropertyInt, jstring, jobject)   → Integer
-    //   jni_func(void, setPropertyDouble, jstring, jobject) → Double
-    //   jni_func(void, setPropertyBoolean, jstring, jobject) → Boolean
-    //
-    // Declaring as non-nullable primitive (Int/Boolean/Double) changes the JVM
-    // signature from Ljava/lang/Integer; to I, etc. The native setter then
-    // receives the raw integer (e.g. 1 for true, 100 for volume) and tries to
-    // use it as a Java object pointer → dereferences address 0x1 → SIGSEGV.
     @JvmStatic external fun getPropertyInt(property: String): Int?
-    @JvmStatic external fun setPropertyInt(property: String, value: Int?)
+    @JvmStatic external fun setPropertyInt(property: String, value: Int)
     @JvmStatic external fun getPropertyBoolean(property: String): Boolean?
-    @JvmStatic external fun setPropertyBoolean(property: String, value: Boolean?)
+    @JvmStatic external fun setPropertyBoolean(property: String, value: Boolean)
     @JvmStatic external fun getPropertyString(property: String): String?
     @JvmStatic external fun setPropertyString(property: String, value: String)
     @JvmStatic external fun getPropertyDouble(property: String): Double?
-    @JvmStatic external fun setPropertyDouble(property: String, value: Double?)
+    @JvmStatic external fun setPropertyDouble(property: String, value: Double)
 
     // ── Property observation ──────────────────────────────────────────────────
 
     @JvmStatic external fun observeProperty(name: String, format: Int)
+
+    // ── Format constants ──────────────────────────────────────────────────────
 
     const val MPV_FORMAT_NONE   = 0
     const val MPV_FORMAT_STRING = 1
@@ -107,7 +102,7 @@ object MPVLib {
     const val MPV_FORMAT_INT64  = 4
     const val MPV_FORMAT_DOUBLE = 5
 
-    // ── Events ────────────────────────────────────────────────────────────────
+    // ── Event ID constants ────────────────────────────────────────────────────
 
     const val MPV_EVENT_NONE             = 0
     const val MPV_EVENT_SHUTDOWN         = 1
@@ -119,7 +114,7 @@ object MPVLib {
     const val MPV_EVENT_PLAYBACK_RESTART = 21
     const val MPV_EVENT_PROPERTY_CHANGE  = 22
 
-    // ── Observer ──────────────────────────────────────────────────────────────
+    // ── Observer system ───────────────────────────────────────────────────────
 
     interface EventObserver {
         fun eventProperty(property: String)
@@ -134,13 +129,33 @@ object MPVLib {
     fun addObserver(o: EventObserver)    { observers.add(o) }
     fun removeObserver(o: EventObserver) { observers.remove(o) }
 
-    // ── JNI callbacks (called from native thread — do NOT rename) ─────────────
+    // ── JNI callbacks (called from native thread — DO NOT rename) ─────────────
+    // The C code calls these via JNI by exact name.
 
-    @JvmStatic fun eventProperty(property: String, value: Long)    { observers.forEach { it.eventProperty(property, value) } }
-    @JvmStatic fun eventProperty(property: String, value: Boolean) { observers.forEach { it.eventProperty(property, value) } }
-    @JvmStatic fun eventProperty(property: String, value: String)  { observers.forEach { it.eventProperty(property, value) } }
-    @JvmStatic fun eventProperty(property: String)                 { observers.forEach { it.eventProperty(property) } }
-    @JvmStatic fun event(eventId: Int)                             { observers.forEach { it.event(eventId) } }
+    @JvmStatic
+    fun eventProperty(property: String, value: Long) {
+        observers.forEach { it.eventProperty(property, value) }
+    }
+
+    @JvmStatic
+    fun eventProperty(property: String, value: Boolean) {
+        observers.forEach { it.eventProperty(property, value) }
+    }
+
+    @JvmStatic
+    fun eventProperty(property: String, value: String) {
+        observers.forEach { it.eventProperty(property, value) }
+    }
+
+    @JvmStatic
+    fun eventProperty(property: String) {
+        observers.forEach { it.eventProperty(property) }
+    }
+
+    @JvmStatic
+    fun event(eventId: Int) {
+        observers.forEach { it.event(eventId) }
+    }
 
     private const val TAG = "MPVLib"
 }

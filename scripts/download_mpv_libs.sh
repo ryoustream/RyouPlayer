@@ -2,18 +2,17 @@
 # ────────────────────────────────────────────────────────────────────────────
 # download_mpv_libs.sh
 #
-# Downloads libplayer.so (+ ffmpeg + libass built for Android) from the
-# official mpv-android release APK and places it where the app expects it:
-#   app/src/main/jniLibs/arm64-v8a/
+# Downloads libmpv.so + dependencies from the official mpv-android arm64 APK
+# and places them in app/src/main/jniLibs/arm64-v8a/
 #
-# MPVLib.kt loads it via System.loadLibrary("player") → libplayer.so directly.
-# No renaming needed.
+# The JNI bridge expects:  System.loadLibrary("mpv")  →  libmpv.so
+# All other .so (ffmpeg, ass, freetype …) are bundled as dependencies.
 #
-# Run once before building:
+# Usage (run once before building):
 #   chmod +x scripts/download_mpv_libs.sh
 #   ./scripts/download_mpv_libs.sh
 #
-# Requires: curl, unzip (standard on macOS / Linux / WSL)
+# Requires: curl, unzip
 # ────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -26,14 +25,15 @@ TMP_DIR="$(mktemp -d)"
 echo "▶  Downloading mpv-android ${MPV_RELEASE} (arm64-v8a)…"
 curl -L --fail --progress-bar "${APK_URL}" -o "${TMP_DIR}/mpv.apk"
 
-echo "▶  Extracting native libs…"
+echo "▶  Extracting arm64-v8a native libs…"
 mkdir -p "${JNI_OUT}"
 unzip -jo "${TMP_DIR}/mpv.apk" "lib/arm64-v8a/*.so" -d "${JNI_OUT}"
 
-echo "▶  Verifying libplayer.so…"
-if [ ! -f "${JNI_OUT}/libplayer.so" ]; then
-    echo "   ⚠️  libplayer.so not found — listing extracted files:"
-    ls -lh "${JNI_OUT}"/*.so || true
+echo "▶  Verifying libmpv.so…"
+if [ ! -f "${JNI_OUT}/libmpv.so" ]; then
+    echo "❌  libmpv.so not found after extraction!"
+    echo "    Contents of ${JNI_OUT}:"
+    ls "${JNI_OUT}/"
     exit 1
 fi
 
@@ -41,7 +41,7 @@ echo "▶  Cleaning up…"
 rm -rf "${TMP_DIR}"
 
 echo ""
-echo "✅  Native libs ready in ${JNI_OUT}:"
-ls -lh "${JNI_OUT}"/*.so
+echo "✅  Done. Extracted .so files to ${JNI_OUT}:"
+ls -lh "${JNI_OUT}/"*.so
 echo ""
-echo "Now rebuild the project: ./gradlew :app:assembleDebug"
+echo "Now rebuild: ./gradlew :app:assembleDebug"
