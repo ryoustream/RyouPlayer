@@ -5,33 +5,33 @@ import android.content.Context
 import android.util.Log
 import android.view.Surface
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * MPVLib — JNI bridge to libmpv.so from mpv-android.
  *
- * CRITICAL: Every `external fun` name here maps directly to a JNI C symbol:
- *   `create`      → Java_is_xyz_mpv_MPVLib_create
- *   `init`        → Java_is_xyz_mpv_MPVLib_init
- *   `command`     → Java_is_xyz_mpv_MPVLib_command
- *   etc.
+ * LIFECYCLE RULES (violating these causes native crashes):
+ *   1. tryLoad()  — must be called first. Loads the .so file.
+ *   2. create()   — creates the mpv context. Call ONCE per session.
+ *   3. setOptionString() — set options. Must be AFTER create(), BEFORE init().
+ *   4. init()     — initialises the renderer. Call ONCE after all options are set.
+ *   5. attachSurface() — can ONLY be called AFTER init() returns.
+ *   6. destroy()  — tears down the mpv context. After this, create() can be
+ *                   called again for a new session.
  *
- * The function names, return types, and parameter types MUST match exactly
- * what is compiled into libmpv.so. If ANY name or signature differs,
- * System.loadLibrary will succeed but calling the function will throw
- * UnsatisfiedLinkError at runtime → isAvailable = false → blank screen.
- *
- * This interface mirrors mpv-android 2026-04-25 exactly.
- * Source: https://github.com/mpv-android/mpv-android/blob/master/app/src/main/java/is/xyz/mpv/MPVLib.kt
- *
- * Setup: run scripts/download_mpv_libs.sh once before building.
- * Library name: libmpv.so  →  System.loadLibrary("mpv")
+ * isAvailable    = libmpv.so is loaded in the JVM
+ * isInitialized  = create() + init() have completed successfully
+ *                  (safe to call attachSurface / loadfile / properties)
  */
 object MPVLib {
 
-    // ── Library load ──────────────────────────────────────────────────────────
+    // ── State flags ───────────────────────────────────────────────────────────
 
     var isAvailable: Boolean = false
         private set
+
+    /** True only after create() + init() have both completed. */
+    val isInitialized: AtomicBoolean = AtomicBoolean(false)
 
     fun tryLoad(): Boolean {
         if (isAvailable) return true
@@ -40,46 +40,27 @@ object MPVLib {
             Log.i(TAG, "libmpv.so loaded successfully")
             true
         } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "libmpv.so missing — run scripts/download_mpv_libs.sh and rebuild: ${e.message}")
+            Log.e(TAG, "libmpv.so not found in jniLibs — run scripts/download_mpv_libs.sh: ${e.message}")
             false
         }
         return isAvailable
     }
 
     // ── JNI external functions ────────────────────────────────────────────────
-    // These names MUST match the C symbols in libmpv.so exactly.
-    // Return types MUST match: command/setOptionString return Int (mpv error code).
+    // Names MUST match the C JNI symbols in libmpv.so exactly.
 
-    /** Create the mpv context. Call once before [init]. */
-    @JvmStatic external fun create(
-        ctx:       Context?,
-        configDir: String,
-        cacheDir:  String,
-        logLvl:    String,
-    )
-
-    /** Initialize mpv with the options set via [setOptionString]. */
+    @JvmStatic external fun create(ctx: Context?, configDir: String, cacheDir: String, logLvl: String)
     @JvmStatic external fun init()
-
-    /** Destroy the mpv context. */
     @JvmStatic external fun destroy()
-
-    // ── Surface ───────────────────────────────────────────────────────────────
 
     @JvmStatic external fun attachSurface(surface: Surface)
     @JvmStatic external fun detachSurface()
 
-    // ── Command ───────────────────────────────────────────────────────────────
-
-    /** Run an mpv command. Returns mpv error code (0 = success). */
+    /** Returns mpv error code (0 = success, negative = error). */
     @JvmStatic external fun command(args: Array<String?>): Int
 
-    // ── Options ───────────────────────────────────────────────────────────────
-
-    /** Set an mpv option string BEFORE [init]. Returns mpv error code. */
+    /** Set option string BEFORE init(). Returns mpv error code. */
     @JvmStatic external fun setOptionString(name: String, value: String): Int
-
-    // ── Properties ────────────────────────────────────────────────────────────
 
     @JvmStatic external fun getPropertyInt(property: String): Int?
     @JvmStatic external fun setPropertyInt(property: String, value: Int)
@@ -89,8 +70,6 @@ object MPVLib {
     @JvmStatic external fun setPropertyString(property: String, value: String)
     @JvmStatic external fun getPropertyDouble(property: String): Double?
     @JvmStatic external fun setPropertyDouble(property: String, value: Double)
-
-    // ── Property observation ──────────────────────────────────────────────────
 
     @JvmStatic external fun observeProperty(name: String, format: Int)
 
@@ -114,6 +93,51 @@ object MPVLib {
     const val MPV_EVENT_PLAYBACK_RESTART = 21
     const val MPV_EVENT_PROPERTY_CHANGE  = 22
 
+    // ── Safe init/destroy helpers ─────────────────────────────────────────────
+
+    /**
+     * Safe create+init sequence.
+     * Guards against double-init: if already initialized, does nothing.
+     * Returns true if initialization succeeded (or was already done).
+     */
+    fun initMpv(context: Context, logLvl: String = "warn"): Boolean {
+        if (!isAvailable && !tryLoad()) return false
+        if (isInitialized.get()) {
+            Log.d(TAG, "initMpv: already initialized, skipping")
+            return true
+        }
+        return try {
+            create(
+                context.applicationContext,
+                context.filesDir.absolutePath,
+                context.cacheDir.absolutePath,
+                logLvl,
+            )
+            init()
+            isInitialized.set(true)
+            Log.i(TAG, "initMpv: success")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "initMpv failed: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Safe destroy. Resets isInitialized so a new session can be started.
+     * Call this only when the player is fully closed (ViewModel.onCleared).
+     */
+    fun destroyMpv() {
+        if (!isInitialized.get()) return
+        try {
+            isInitialized.set(false)  // set BEFORE destroy() to stop any callbacks
+            destroy()
+            Log.i(TAG, "destroyMpv: success")
+        } catch (e: Exception) {
+            Log.e(TAG, "destroyMpv failed: ${e.message}", e)
+        }
+    }
+
     // ── Observer system ───────────────────────────────────────────────────────
 
     interface EventObserver {
@@ -130,32 +154,12 @@ object MPVLib {
     fun removeObserver(o: EventObserver) { observers.remove(o) }
 
     // ── JNI callbacks (called from native thread — DO NOT rename) ─────────────
-    // The C code calls these via JNI by exact name.
 
-    @JvmStatic
-    fun eventProperty(property: String, value: Long) {
-        observers.forEach { it.eventProperty(property, value) }
-    }
-
-    @JvmStatic
-    fun eventProperty(property: String, value: Boolean) {
-        observers.forEach { it.eventProperty(property, value) }
-    }
-
-    @JvmStatic
-    fun eventProperty(property: String, value: String) {
-        observers.forEach { it.eventProperty(property, value) }
-    }
-
-    @JvmStatic
-    fun eventProperty(property: String) {
-        observers.forEach { it.eventProperty(property) }
-    }
-
-    @JvmStatic
-    fun event(eventId: Int) {
-        observers.forEach { it.event(eventId) }
-    }
+    @JvmStatic fun eventProperty(property: String, value: Long)    { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
+    @JvmStatic fun eventProperty(property: String, value: Boolean) { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
+    @JvmStatic fun eventProperty(property: String, value: String)  { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
+    @JvmStatic fun eventProperty(property: String)                 { if (isInitialized.get()) observers.forEach { it.eventProperty(property) } }
+    @JvmStatic fun event(eventId: Int)                             { if (isInitialized.get()) observers.forEach { it.event(eventId) } }
 
     private const val TAG = "MPVLib"
 }

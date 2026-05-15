@@ -108,16 +108,25 @@ class PlayerViewModel @Inject constructor(
     // ─── Init ─────────────────────────────────────────────────────────────────
 
     fun initializePlayer() {
-        // tryLoad() does System.loadLibrary("mpv") — must succeed before ANY JNI call
+        // Guard: tryLoad first — must succeed before any JNI call
         if (!MPVLib.tryLoad()) {
             _state.update { it.copy(error = "libmpv.so not found.\nRun scripts/download_mpv_libs.sh and rebuild.") }
-            Log.e(TAG, "MPVLib not available — libmpv.so missing from jniLibs")
+            Log.e(TAG, "MPVLib not available — libmpv.so missing from jniLibs/arm64-v8a/")
             return
         }
+
+        // Guard: if already initialized (e.g. ViewModel reused after config change),
+        // skip re-init to prevent native crash from double create()+init()
+        if (MPVLib.isInitialized.get()) {
+            Log.d(TAG, "initializePlayer: already initialized")
+            _state.update { it.copy(mpvReady = true) }
+            pendingUri?.let { playUri(it); pendingUri = null }
+            return
+        }
+
         MPVLib.addObserver(this)
 
-        // create() is the direct JNI external — symbol: Java_is_xyz_mpv_MPVLib_create
-        // MUST pass nullable Context as first arg (exactly as mpv-android native expects)
+        // create() — allocates mpv context
         MPVLib.create(
             context.applicationContext,
             context.filesDir.absolutePath,
@@ -125,57 +134,60 @@ class PlayerViewModel @Inject constructor(
             "warn",
         )
 
-        // ── Core mpv options (set before init) ─────────────────────────────
-        MPVLib.setOptionString("vo",               "gpu")
-        MPVLib.setOptionString("gpu-context",      "android")
-        MPVLib.setOptionString("opengl-es",        "yes")
-        MPVLib.setOptionString("hwdec",            "mediacodec-copy")
-        MPVLib.setOptionString("hwdec-codecs",     "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
-        MPVLib.setOptionString("ao",               "audiotrack,opensles")
-        MPVLib.setOptionString("tls-verify",       "no")
+        // setOptionString() — ALL options MUST be set between create() and init()
+        MPVLib.setOptionString("vo",                "gpu")
+        MPVLib.setOptionString("gpu-context",       "android")
+        MPVLib.setOptionString("opengl-es",         "yes")
+        MPVLib.setOptionString("hwdec",             "mediacodec-copy")
+        MPVLib.setOptionString("hwdec-codecs",      "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
+        MPVLib.setOptionString("ao",                "audiotrack,opensles")
+        MPVLib.setOptionString("tls-verify",        "no")
         MPVLib.setOptionString("demuxer-max-bytes", "128MiB")
         MPVLib.setOptionString("demuxer-readahead-secs", "10")
-        MPVLib.setOptionString("cache",            "yes")
-        MPVLib.setOptionString("cache-secs",       "30")
-        // ── Subtitle — mpv renders via libass onto the video surface ────────
-        MPVLib.setOptionString("sub-auto",         "fuzzy")
-        MPVLib.setOptionString("blend-subtitles",  "no")
-        MPVLib.setOptionString("sub-ass",          "yes")
-        MPVLib.setOptionString("sub-ass-override", "no")   // respect embedded .ass styles
-        MPVLib.setOptionString("sub-font-size",    "40")
-        MPVLib.setOptionString("sub-border-size",  "2.5")
-        MPVLib.setOptionString("sub-color",        "#FFFFFFFF")
-        MPVLib.setOptionString("sub-border-color", "#FF000000")
-        MPVLib.setOptionString("sub-shadow-offset","1")
-        MPVLib.setOptionString("sub-shadow-color", "#80000000")
-        MPVLib.setOptionString("sub-margin-y",     "36")
-        // ── Video quality ──────────────────────────────────────────────────
-        MPVLib.setOptionString("video-sync",       "audio")
-        MPVLib.setOptionString("interpolation",    "no")
+        MPVLib.setOptionString("cache",             "yes")
+        MPVLib.setOptionString("cache-secs",        "30")
+        // Subtitle rendering via mpv internal libass
+        MPVLib.setOptionString("sub-auto",          "fuzzy")
+        MPVLib.setOptionString("blend-subtitles",   "no")
+        MPVLib.setOptionString("sub-ass",           "yes")
+        MPVLib.setOptionString("sub-ass-override",  "no")
+        MPVLib.setOptionString("sub-font-size",     "40")
+        MPVLib.setOptionString("sub-border-size",   "2.5")
+        MPVLib.setOptionString("sub-color",         "#FFFFFFFF")
+        MPVLib.setOptionString("sub-border-color",  "#FF000000")
+        MPVLib.setOptionString("sub-shadow-offset", "1")
+        MPVLib.setOptionString("sub-shadow-color",  "#80000000")
+        MPVLib.setOptionString("sub-margin-y",      "36")
+        MPVLib.setOptionString("video-sync",        "audio")
+        MPVLib.setOptionString("interpolation",     "no")
 
+        // init() — starts the mpv core and rendering threads
         MPVLib.init()
 
-        // Observe key properties
+        // Mark initialized AFTER init() returns — this is the gate for
+        // MPVView.surfaceCreated() to call attachSurface() safely
+        MPVLib.isInitialized.set(true)
+
+        // Observe properties
         listOf(
-            "pause"             to MPVLib.MPV_FORMAT_FLAG,
-            "time-pos"          to MPVLib.MPV_FORMAT_DOUBLE,
-            "duration"          to MPVLib.MPV_FORMAT_DOUBLE,
-            "media-title"       to MPVLib.MPV_FORMAT_STRING,
-            "metadata/by-key/title" to MPVLib.MPV_FORMAT_STRING,
-            "track-list"        to MPVLib.MPV_FORMAT_STRING,
-            "chapter-list"      to MPVLib.MPV_FORMAT_STRING,
-            "video-params/w"    to MPVLib.MPV_FORMAT_INT64,
-            "video-params/h"    to MPVLib.MPV_FORMAT_INT64,
-            "sid"               to MPVLib.MPV_FORMAT_INT64,
-            "aid"               to MPVLib.MPV_FORMAT_INT64,
-            "speed"             to MPVLib.MPV_FORMAT_DOUBLE,
-            "volume"            to MPVLib.MPV_FORMAT_DOUBLE,
-            "demuxer-cache-state" to MPVLib.MPV_FORMAT_NONE,
+            "pause"                  to MPVLib.MPV_FORMAT_FLAG,
+            "time-pos"               to MPVLib.MPV_FORMAT_DOUBLE,
+            "duration"               to MPVLib.MPV_FORMAT_DOUBLE,
+            "media-title"            to MPVLib.MPV_FORMAT_STRING,
+            "metadata/by-key/title"  to MPVLib.MPV_FORMAT_STRING,
+            "track-list"             to MPVLib.MPV_FORMAT_STRING,
+            "chapter-list"           to MPVLib.MPV_FORMAT_STRING,
+            "video-params/w"         to MPVLib.MPV_FORMAT_INT64,
+            "video-params/h"         to MPVLib.MPV_FORMAT_INT64,
+            "sid"                    to MPVLib.MPV_FORMAT_INT64,
+            "aid"                    to MPVLib.MPV_FORMAT_INT64,
+            "speed"                  to MPVLib.MPV_FORMAT_DOUBLE,
+            "volume"                 to MPVLib.MPV_FORMAT_DOUBLE,
         ).forEach { (name, fmt) -> MPVLib.observeProperty(name, fmt) }
 
         _state.update { it.copy(mpvReady = true) }
+        Log.i(TAG, "initializePlayer: mpv ready")
 
-        // If a URI was requested before init completed, play it now
         pendingUri?.let { playUri(it); pendingUri = null }
     }
 
@@ -558,9 +570,12 @@ class PlayerViewModel @Inject constructor(
         hideJob?.cancel()
         if (MPVLib.isAvailable) {
             MPVLib.removeObserver(this)
-            runCatching { MPVLib.command(arrayOf("stop")) }
-            runCatching { MPVLib.destroy() }
+            if (MPVLib.isInitialized.get()) {
+                runCatching { MPVLib.command(arrayOf("stop")) }
+            }
+            MPVLib.destroyMpv()  // safe: guards double-destroy internally
         }
+        _state.update { it.copy(mpvReady = false) }
         super.onCleared()
     }
 

@@ -1,6 +1,7 @@
 package com.ryoustream.player.presentation.player
 
 import android.app.PictureInPictureParams
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
@@ -127,8 +128,8 @@ class PlayerActivity : ComponentActivity() {
     companion object {
         const val EXTRA_MEDIA_URI = "extra_media_uri"
 
-        fun createIntent(activity: ComponentActivity, uri: Uri): Intent =
-            Intent(activity, PlayerActivity::class.java).apply {
+        fun createIntent(context: Context, uri: Uri): Intent =
+            Intent(context, PlayerActivity::class.java).apply {
                 putExtra(EXTRA_MEDIA_URI, uri.toString())
             }
     }
