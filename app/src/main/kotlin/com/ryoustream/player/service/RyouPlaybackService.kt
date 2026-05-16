@@ -59,7 +59,7 @@ class RyouPlaybackService : Service() {
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                if (MPVLib.isAvailable) MPVLib.setPropertyBoolean("pause", true)
+                if (MPVLib.isInitialized.get()) MPVLib.setPropertyBoolean("pause", true)
                 updateNotification(isPlaying = false)
             }
         }
@@ -111,10 +111,10 @@ class RyouPlaybackService : Service() {
                 override fun onPause() { mpvPause(true) }
                 override fun onStop()  { mpvPause(true); abandonAudioFocus(); stopSelf() }
                 override fun onSeekTo(pos: Long) {
-                    if (MPVLib.isAvailable) MPVLib.command(arrayOf("seek", (pos / 1000.0).toString(), "absolute"))
+                    if (MPVLib.isInitialized.get()) MPVLib.command(arrayOf("seek", (pos / 1000.0).toString(), "absolute"))
                 }
-                override fun onSkipToNext()     { if (MPVLib.isAvailable) MPVLib.command(arrayOf("playlist-next")) }
-                override fun onSkipToPrevious() { if (MPVLib.isAvailable) MPVLib.command(arrayOf("playlist-prev")) }
+                override fun onSkipToNext()     { if (MPVLib.isInitialized.get()) MPVLib.command(arrayOf("playlist-next")) }
+                override fun onSkipToPrevious() { if (MPVLib.isInitialized.get()) MPVLib.command(arrayOf("playlist-prev")) }
             })
             isActive = true
         }
@@ -264,7 +264,7 @@ class RyouPlaybackService : Service() {
     }
 
     private fun onAudioFocusChange(focusChange: Int) {
-        if (!MPVLib.isAvailable) return
+        if (!MPVLib.isInitialized.get()) return
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN            -> { MPVLib.setPropertyBoolean("pause", false); MPVLib.setPropertyInt("volume", 100) }
             AudioManager.AUDIOFOCUS_LOSS            -> { MPVLib.setPropertyBoolean("pause", true); abandonAudioFocus() }
@@ -276,7 +276,7 @@ class RyouPlaybackService : Service() {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun mpvPause(paused: Boolean) {
-        if (MPVLib.isAvailable) MPVLib.setPropertyBoolean("pause", paused)
+        if (MPVLib.isInitialized.get()) MPVLib.setPropertyBoolean("pause", paused)
         updateNotification(isPlaying = !paused)
     }
 

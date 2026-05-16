@@ -8,7 +8,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * MPVLib — JNI bridge to libmpv.so from mpv-android.
+ * MPVLib — JNI bridge to libplayer.so from mpv-android.
  *
  * LIFECYCLE RULES (violating these causes native crashes):
  *   1. tryLoad()  — must be called first. Loads the .so file.
@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   6. destroy()  — tears down the mpv context. After this, create() can be
  *                   called again for a new session.
  *
- * isAvailable    = libmpv.so is loaded in the JVM
+ * isAvailable    = libplayer.so is loaded in the JVM
  * isInitialized  = create() + init() have completed successfully
  *                  (safe to call attachSurface / loadfile / properties)
  */
@@ -36,18 +36,18 @@ object MPVLib {
     fun tryLoad(): Boolean {
         if (isAvailable) return true
         isAvailable = try {
-            System.loadLibrary("mpv")
-            Log.i(TAG, "libmpv.so loaded successfully")
+            System.loadLibrary("player")
+            Log.i(TAG, "libplayer.so loaded successfully")
             true
         } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "libmpv.so not found in jniLibs — run scripts/download_mpv_libs.sh: ${e.message}")
+            Log.e(TAG, "libplayer.so not found in jniLibs — run scripts/download_mpv_libs.sh: ${e.message}")
             false
         }
         return isAvailable
     }
 
     // ── JNI external functions ────────────────────────────────────────────────
-    // Names MUST match the C JNI symbols in libmpv.so exactly.
+    // Names MUST match the C JNI symbols in libplayer.so exactly.
 
     @JvmStatic external fun create(ctx: Context?, configDir: String, cacheDir: String, logLvl: String)
     @JvmStatic external fun init()

@@ -110,7 +110,7 @@ class PlayerViewModel @Inject constructor(
     fun initializePlayer() {
         // Guard: tryLoad first — must succeed before any JNI call
         if (!MPVLib.tryLoad()) {
-            _state.update { it.copy(error = "libmpv.so not found.\nRun scripts/download_mpv_libs.sh and rebuild.") }
+            _state.update { it.copy(error = "libplayer.so not found.\nRun scripts/download_mpv_libs.sh and rebuild.") }
             Log.e(TAG, "MPVLib not available — libmpv.so missing from jniLibs/arm64-v8a/")
             return
         }
@@ -126,43 +126,54 @@ class PlayerViewModel @Inject constructor(
 
         MPVLib.addObserver(this)
 
-        // create() — allocates mpv context
-        MPVLib.create(
-            context.applicationContext,
-            context.filesDir.absolutePath,
-            context.cacheDir.absolutePath,
-            "warn",
-        )
+        // Wrap the entire create→setOption→init sequence in try-catch.
+        // Any UnsatisfiedLinkError or native exception here would otherwise
+        // propagate uncaught and force-close the app.
+        val initOk = runCatching {
+            // create() — allocates mpv context
+            MPVLib.create(
+                context.applicationContext,
+                context.filesDir.absolutePath,
+                context.cacheDir.absolutePath,
+                "warn",
+            )
 
-        // setOptionString() — ALL options MUST be set between create() and init()
-        MPVLib.setOptionString("vo",                "gpu")
-        MPVLib.setOptionString("gpu-context",       "android")
-        MPVLib.setOptionString("opengl-es",         "yes")
-        MPVLib.setOptionString("hwdec",             "mediacodec-copy")
-        MPVLib.setOptionString("hwdec-codecs",      "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
-        MPVLib.setOptionString("ao",                "audiotrack,opensles")
-        MPVLib.setOptionString("tls-verify",        "no")
-        MPVLib.setOptionString("demuxer-max-bytes", "128MiB")
-        MPVLib.setOptionString("demuxer-readahead-secs", "10")
-        MPVLib.setOptionString("cache",             "yes")
-        MPVLib.setOptionString("cache-secs",        "30")
-        // Subtitle rendering via mpv internal libass
-        MPVLib.setOptionString("sub-auto",          "fuzzy")
-        MPVLib.setOptionString("blend-subtitles",   "no")
-        MPVLib.setOptionString("sub-ass",           "yes")
-        MPVLib.setOptionString("sub-ass-override",  "no")
-        MPVLib.setOptionString("sub-font-size",     "40")
-        MPVLib.setOptionString("sub-border-size",   "2.5")
-        MPVLib.setOptionString("sub-color",         "#FFFFFFFF")
-        MPVLib.setOptionString("sub-border-color",  "#FF000000")
-        MPVLib.setOptionString("sub-shadow-offset", "1")
-        MPVLib.setOptionString("sub-shadow-color",  "#80000000")
-        MPVLib.setOptionString("sub-margin-y",      "36")
-        MPVLib.setOptionString("video-sync",        "audio")
-        MPVLib.setOptionString("interpolation",     "no")
+            // setOptionString() — ALL options MUST be set between create() and init()
+            MPVLib.setOptionString("vo",                "gpu")
+            MPVLib.setOptionString("gpu-context",       "android")
+            MPVLib.setOptionString("opengl-es",         "yes")
+            MPVLib.setOptionString("hwdec",             "mediacodec-copy")
+            MPVLib.setOptionString("hwdec-codecs",      "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
+            MPVLib.setOptionString("ao",                "audiotrack,opensles")
+            MPVLib.setOptionString("tls-verify",        "no")
+            MPVLib.setOptionString("demuxer-max-bytes", "128MiB")
+            MPVLib.setOptionString("demuxer-readahead-secs", "10")
+            MPVLib.setOptionString("cache",             "yes")
+            MPVLib.setOptionString("cache-secs",        "30")
+            // Subtitle rendering via mpv internal libass
+            MPVLib.setOptionString("sub-auto",          "fuzzy")
+            MPVLib.setOptionString("blend-subtitles",   "no")
+            MPVLib.setOptionString("sub-ass",           "yes")
+            MPVLib.setOptionString("sub-ass-override",  "no")
+            MPVLib.setOptionString("sub-font-size",     "40")
+            MPVLib.setOptionString("sub-border-size",   "2.5")
+            MPVLib.setOptionString("sub-color",         "#FFFFFFFF")
+            MPVLib.setOptionString("sub-border-color",  "#FF000000")
+            MPVLib.setOptionString("sub-shadow-offset", "1")
+            MPVLib.setOptionString("sub-shadow-color",  "#80000000")
+            MPVLib.setOptionString("sub-margin-y",      "36")
+            MPVLib.setOptionString("video-sync",        "audio")
+            MPVLib.setOptionString("interpolation",     "no")
 
-        // init() — starts the mpv core and rendering threads
-        MPVLib.init()
+            // init() — starts the mpv core and rendering threads
+            MPVLib.init()
+        }.onFailure { e ->
+            Log.e(TAG, "MPV init failed: ${e.javaClass.simpleName}: ${e.message}", e)
+            MPVLib.removeObserver(this)
+            _state.update { it.copy(error = "MPV init failed: ${e.message}") }
+        }
+
+        if (initOk.isFailure) return
 
         // Mark initialized AFTER init() returns — this is the gate for
         // MPVView.surfaceCreated() to call attachSurface() safely
@@ -403,15 +414,17 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun setSubtitleDelay(delayMs: Long) {
-        MPVLib.setPropertyDouble("sub-delay", delayMs / 1000.0)
+        if (MPVLib.isInitialized.get())
+            MPVLib.setPropertyDouble("sub-delay", delayMs / 1000.0)
         _state.update { it.copy(subtitleDelay = delayMs) }
     }
 
     fun setSubtitleStyle(style: SubtitleStyle) {
         _state.update { it.copy(subtitleStyle = style) }
-        // Apply to mpv as well (these affect external .srt via mpv's renderer)
-        MPVLib.setPropertyDouble("sub-font-size",    style.fontSize.value.toDouble())
-        MPVLib.setPropertyDouble("sub-border-size",  style.outlineWidth.toDouble())
+        if (MPVLib.isInitialized.get()) {
+            MPVLib.setPropertyDouble("sub-font-size",   style.fontSize.value.toDouble())
+            MPVLib.setPropertyDouble("sub-border-size", style.outlineWidth.toDouble())
+        }
     }
 
     fun toggleSubtitle() {
