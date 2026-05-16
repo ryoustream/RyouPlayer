@@ -130,15 +130,15 @@ class PlayerViewModel @Inject constructor(
         // Any UnsatisfiedLinkError or native exception here would otherwise
         // propagate uncaught and force-close the app.
         val initOk = runCatching {
-            // create() — allocates mpv context
-            MPVLib.create(
-                context.applicationContext,
-                context.filesDir.absolutePath,
-                context.cacheDir.absolutePath,
-                "warn",
-            )
+            // create() — ONE param (Context) confirmed from mpv-android main.cpp:
+            //   jni_func(void, create, jobject appctx)
+            // Passing extra args (configDir, cacheDir, logLvl) corrupts the
+            // native stack → immediate crash. Context is the only parameter.
+            MPVLib.create(context.applicationContext)
 
             // setOptionString() — ALL options MUST be set between create() and init()
+            MPVLib.setOptionString("config-dir",       context.filesDir.absolutePath)
+            MPVLib.setOptionString("cache-dir",        context.cacheDir.absolutePath)
             MPVLib.setOptionString("vo",                "gpu")
             MPVLib.setOptionString("gpu-context",       "android")
             MPVLib.setOptionString("opengl-es",         "yes")

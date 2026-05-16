@@ -1,4 +1,3 @@
-@file:Suppress("FunctionName")
 package `is`.xyz.mpv
 
 import android.content.Context
@@ -8,80 +7,106 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * MPVLib — JNI bridge to libplayer.so from mpv-android.
+ * MPVLib — JNI bridge to libmpv/libplayer from mpv-android.
  *
- * LIFECYCLE RULES (violating these causes native crashes):
- *   1. tryLoad()  — must be called first. Loads the .so file.
- *   2. create()   — creates the mpv context. Call ONCE per session.
- *   3. setOptionString() — set options. Must be AFTER create(), BEFORE init().
- *   4. init()     — initialises the renderer. Call ONCE after all options are set.
- *   5. attachSurface() — can ONLY be called AFTER init() returns.
- *   6. destroy()  — tears down the mpv context. After this, create() can be
- *                   called again for a new session.
+ * Signatures are derived directly from the official mpv-android source:
+ *   app/src/main/java/is/xyz/mpv/MPVLib.java
+ *   app/src/main/jni/main.cpp
+ *   app/src/main/jni/property.cpp
  *
- * isAvailable    = libplayer.so is loaded in the JVM
- * isInitialized  = create() + init() have completed successfully
- *                  (safe to call attachSurface / loadfile / properties)
+ * LIFECYCLE:
+ *   1. tryLoad()          — loads the .so. Must succeed first.
+ *   2. create(ctx)        — ONE param (Context). Creates mpv_handle.
+ *   3. setOptionString()  — set options AFTER create(), BEFORE init().
+ *   4. init()             — starts mpv core + event thread.
+ *   5. attachSurface()    — only AFTER init() returns.
+ *   6. destroy()          — tears down mpv. Resets isInitialized.
+ *
+ * SETTER TYPES — confirmed from property.cpp:
+ *   jni_func(void, setPropertyInt,     jstring, jobject)  ← boxed Integer
+ *   jni_func(void, setPropertyDouble,  jstring, jobject)  ← boxed Double
+ *   jni_func(void, setPropertyBoolean, jstring, jobject)  ← boxed Boolean
+ *   Kotlin nullable (Int?, Double?, Boolean?) compiles to jobject. ✓
+ *
+ * GETTER TYPES — confirmed from property.cpp:
+ *   jni_func(jobject, getPropertyInt, ...)     ← returns Integer | null
+ *   jni_func(jobject, getPropertyDouble, ...)  ← returns Double  | null
+ *   jni_func(jobject, getPropertyBoolean, ...) ← returns Boolean | null
+ *
+ * create() — confirmed from main.cpp:
+ *   jni_func(void, create, jobject appctx)  ← ONE parameter only.
+ *   Passing extra args crashes the native stack.
+ *
+ * command() — confirmed from main.cpp:
+ *   jni_func(void, command, jobjectArray jarray)  ← returns void.
  */
 object MPVLib {
 
-    // ── State flags ───────────────────────────────────────────────────────────
+    // ── State ─────────────────────────────────────────────────────────────────
 
     var isAvailable: Boolean = false
         private set
 
-    /** True only after create() + init() have both completed. */
     val isInitialized: AtomicBoolean = AtomicBoolean(false)
 
+    /**
+     * Try to load the native library.
+     * mpv-android ships either "player" (newer) or "mpv" (older) — try both.
+     */
     fun tryLoad(): Boolean {
         if (isAvailable) return true
-        isAvailable = try {
-            System.loadLibrary("player")
-            Log.i(TAG, "libplayer.so loaded successfully")
-            true
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "libplayer.so not found in jniLibs — run scripts/download_mpv_libs.sh: ${e.message}")
-            false
+        for (lib in listOf("player", "mpv")) {
+            try {
+                System.loadLibrary(lib)
+                isAvailable = true
+                Log.i(TAG, "lib${lib}.so loaded")
+                return true
+            } catch (_: UnsatisfiedLinkError) {
+                Log.w(TAG, "lib${lib}.so not found, trying next…")
+            }
         }
-        return isAvailable
+        Log.e(TAG, "No mpv native library found (tried libplayer.so, libmpv.so)")
+        return false
     }
 
-    // ── JNI external functions ────────────────────────────────────────────────
-    // Names MUST match the C JNI symbols in libplayer.so exactly.
+    // ── Native declarations — names MUST match JNI symbols in the .so ─────────
 
-    @JvmStatic external fun create(ctx: Context?, configDir: String, cacheDir: String, logLvl: String)
+    /** ONE param (Context). main.cpp: jni_func(void, create, jobject appctx) */
+    @JvmStatic external fun create(appctx: Context)
+
     @JvmStatic external fun init()
     @JvmStatic external fun destroy()
 
     @JvmStatic external fun attachSurface(surface: Surface)
     @JvmStatic external fun detachSurface()
 
-    /** Returns mpv error code (0 = success, negative = error). */
-    @JvmStatic external fun command(args: Array<String?>): Int
+    /** Returns void. main.cpp: jni_func(void, command, jobjectArray jarray) */
+    @JvmStatic external fun command(args: Array<String?>)
 
-    /** Set option string BEFORE init(). Returns mpv error code. */
+    /** Returns int error code. */
     @JvmStatic external fun setOptionString(name: String, value: String): Int
 
+    // Getters — return jobject (nullable boxed). property.cpp: jni_func(jobject, ...)
     @JvmStatic external fun getPropertyInt(property: String): Int?
-    @JvmStatic external fun setPropertyInt(property: String, value: Int)
     @JvmStatic external fun getPropertyBoolean(property: String): Boolean?
-    @JvmStatic external fun setPropertyBoolean(property: String, value: Boolean)
     @JvmStatic external fun getPropertyString(property: String): String?
-    @JvmStatic external fun setPropertyString(property: String, value: String)
     @JvmStatic external fun getPropertyDouble(property: String): Double?
-    @JvmStatic external fun setPropertyDouble(property: String, value: Double)
+
+    // Setters — take jobject (nullable boxed). property.cpp: jni_func(void, ..., jobject value)
+    @JvmStatic external fun setPropertyInt(property: String, value: Int?)
+    @JvmStatic external fun setPropertyBoolean(property: String, value: Boolean?)
+    @JvmStatic external fun setPropertyString(property: String, value: String)
+    @JvmStatic external fun setPropertyDouble(property: String, value: Double?)
 
     @JvmStatic external fun observeProperty(name: String, format: Int)
 
-    // ── Format constants ──────────────────────────────────────────────────────
+    // ── Constants ─────────────────────────────────────────────────────────────
 
     const val MPV_FORMAT_NONE   = 0
     const val MPV_FORMAT_STRING = 1
     const val MPV_FORMAT_FLAG   = 3
     const val MPV_FORMAT_INT64  = 4
     const val MPV_FORMAT_DOUBLE = 5
-
-    // ── Event ID constants ────────────────────────────────────────────────────
 
     const val MPV_EVENT_NONE             = 0
     const val MPV_EVENT_SHUTDOWN         = 1
@@ -93,52 +118,29 @@ object MPVLib {
     const val MPV_EVENT_PLAYBACK_RESTART = 21
     const val MPV_EVENT_PROPERTY_CHANGE  = 22
 
-    // ── Safe init/destroy helpers ─────────────────────────────────────────────
+    // ── Safe lifecycle helpers ────────────────────────────────────────────────
 
-    /**
-     * Safe create+init sequence.
-     * Guards against double-init: if already initialized, does nothing.
-     * Returns true if initialization succeeded (or was already done).
-     */
-    fun initMpv(context: Context, logLvl: String = "warn"): Boolean {
+    fun initMpv(context: Context): Boolean {
         if (!isAvailable && !tryLoad()) return false
-        if (isInitialized.get()) {
-            Log.d(TAG, "initMpv: already initialized, skipping")
-            return true
-        }
+        if (isInitialized.get()) { Log.d(TAG, "initMpv: already done"); return true }
         return try {
-            create(
-                context.applicationContext,
-                context.filesDir.absolutePath,
-                context.cacheDir.absolutePath,
-                logLvl,
-            )
-            init()
+            // create() takes ONE Context — confirmed from main.cpp
+            create(context.applicationContext)
             isInitialized.set(true)
-            Log.i(TAG, "initMpv: success")
+            Log.i(TAG, "initMpv: create() OK")
             true
-        } catch (e: Exception) {
-            Log.e(TAG, "initMpv failed: ${e.message}", e)
-            false
+        } catch (e: Throwable) {
+            Log.e(TAG, "initMpv create() failed: $e"); false
         }
     }
 
-    /**
-     * Safe destroy. Resets isInitialized so a new session can be started.
-     * Call this only when the player is fully closed (ViewModel.onCleared).
-     */
     fun destroyMpv() {
         if (!isInitialized.get()) return
-        try {
-            isInitialized.set(false)  // set BEFORE destroy() to stop any callbacks
-            destroy()
-            Log.i(TAG, "destroyMpv: success")
-        } catch (e: Exception) {
-            Log.e(TAG, "destroyMpv failed: ${e.message}", e)
-        }
+        isInitialized.set(false)
+        try { destroy() } catch (e: Throwable) { Log.e(TAG, "destroyMpv: $e") }
     }
 
-    // ── Observer system ───────────────────────────────────────────────────────
+    // ── Observer ──────────────────────────────────────────────────────────────
 
     interface EventObserver {
         fun eventProperty(property: String)
@@ -149,12 +151,10 @@ object MPVLib {
     }
 
     private val observers = CopyOnWriteArrayList<EventObserver>()
-
     fun addObserver(o: EventObserver)    { observers.add(o) }
     fun removeObserver(o: EventObserver) { observers.remove(o) }
 
-    // ── JNI callbacks (called from native thread — DO NOT rename) ─────────────
-
+    // JNI callbacks — called from native event thread. DO NOT rename.
     @JvmStatic fun eventProperty(property: String, value: Long)    { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
     @JvmStatic fun eventProperty(property: String, value: Boolean) { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
     @JvmStatic fun eventProperty(property: String, value: String)  { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }

@@ -43,10 +43,14 @@ class MPVView @JvmOverloads constructor(
 
     override fun surfaceChanged(h: SurfaceHolder, fmt: Int, w: Int, h2: Int) {
         Log.d(TAG, "surfaceChanged ${w}x${h2}")
-        // DO NOT call setPropertyString("android-surface-size") here.
-        // "android-surface-size" is not a standard writable mpv property.
-        // mpv gets surface size changes from the EGL/Android surface events
-        // automatically — no explicit notification needed.
+        if (!MPVLib.isInitialized.get()) return
+        // Notify mpv of the new surface dimensions so the Android GPU context
+        // can resize its EGL surface. Without this, video renders at wrong size.
+        try {
+            MPVLib.setPropertyString("android-surface-size", "${w}x${h2}")
+        } catch (e: Exception) {
+            Log.w(TAG, "setPropertyString android-surface-size failed: ${e.message}")
+        }
     }
 
     override fun surfaceDestroyed(h: SurfaceHolder) {
