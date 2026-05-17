@@ -255,10 +255,14 @@ class PlayerViewModel @Inject constructor(
     // inside init_methods_cache() → create() aborts → app crashes immediately.
     override fun eventProperty(property: String, value: Double) {
         when (property) {
-            "time-pos"  -> _state.update { it.copy(currentPositionMs = (value * 1000).toLong()) }
-            "duration"  -> _state.update { it.copy(durationMs = (value * 1000).toLong()) }
-            "speed"     -> _state.update { it.copy(
-                playbackState = _state.value.playbackState.copy(playbackSpeed = value.toFloat())
+            "time-pos" -> _state.update { it.copy(
+                playbackState = it.playbackState.copy(currentPosition = (value * 1000).toLong())
+            )}
+            "duration" -> _state.update { it.copy(
+                playbackState = it.playbackState.copy(duration = (value * 1000).toLong())
+            )}
+            "speed" -> _state.update { it.copy(
+                playbackState = it.playbackState.copy(playbackSpeed = value.toFloat())
             )}
         }
     }
