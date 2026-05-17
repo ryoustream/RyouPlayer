@@ -1,7 +1,7 @@
 # 🎬 Ryou Player
 
 <p align="center">
-  <img src="app/src/main/res/drawable/ic_splash_logo.xml" width="120" alt="Ryou Player Logo"/>
+  <img src="https://github.com/ryoustream/RyouPlayer/blob/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" alt="Ryou Player Logo"/>
 </p>
 
 <p align="center">
