@@ -249,6 +249,20 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    // Required: libplayer.so calls this for MPV_FORMAT_DOUBLE properties.
+    // Descriptor (Ljava/lang/String;D)V confirmed from binary inspection.
+    // Missing this method causes GetStaticMethodID to throw NoSuchMethodError
+    // inside init_methods_cache() → create() aborts → app crashes immediately.
+    override fun eventProperty(property: String, value: Double) {
+        when (property) {
+            "time-pos"  -> _state.update { it.copy(currentPositionMs = (value * 1000).toLong()) }
+            "duration"  -> _state.update { it.copy(durationMs = (value * 1000).toLong()) }
+            "speed"     -> _state.update { it.copy(
+                playbackState = _state.value.playbackState.copy(playbackSpeed = value.toFloat())
+            )}
+        }
+    }
+
     override fun eventProperty(property: String, value: Boolean) {
         when (property) {
             "pause" -> {

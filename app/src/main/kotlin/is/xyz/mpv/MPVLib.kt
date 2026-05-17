@@ -50,23 +50,27 @@ object MPVLib {
     val isInitialized: AtomicBoolean = AtomicBoolean(false)
 
     /**
-     * Try to load the native library.
-     * mpv-android ships either "player" (newer) or "mpv" (older) — try both.
+     * Load native libraries in the correct order.
+     *
+     * APK structure (confirmed by binary inspection):
+     *   libplayer.so  22 KB  — JNI bridge, exports Java_is_xyz_mpv_MPVLib_* symbols
+     *   libmpv.so     6.3 MB — actual mpv+ffmpeg player, dependency of libplayer.so
+     *
+     * libplayer.so lists libmpv.so in DT_NEEDED. On Android < 6.0 transitive
+     * dependencies are NOT auto-loaded, so we must load libmpv first explicitly.
+     * This also matches the official mpv-android loading order.
      */
     fun tryLoad(): Boolean {
         if (isAvailable) return true
-        for (lib in listOf("player", "mpv")) {
-            try {
-                System.loadLibrary(lib)
-                isAvailable = true
-                Log.i(TAG, "lib${lib}.so loaded")
-                return true
-            } catch (_: UnsatisfiedLinkError) {
-                Log.w(TAG, "lib${lib}.so not found, trying next…")
-            }
-        }
-        Log.e(TAG, "No mpv native library found (tried libplayer.so, libmpv.so)")
-        return false
+        // Step 1: load the dependency (libmpv.so) — ignore failure, linker may handle it
+        runCatching { System.loadLibrary("mpv") }
+            .onSuccess { Log.i(TAG, "libmpv.so loaded") }
+            .onFailure { Log.w(TAG, "libmpv.so load skipped: ${it.message}") }
+        // Step 2: load the JNI bridge (libplayer.so)
+        return runCatching { System.loadLibrary("player") }
+            .onSuccess { isAvailable = true; Log.i(TAG, "libplayer.so loaded") }
+            .onFailure { Log.e(TAG, "libplayer.so not found: ${it.message}") }
+            .isSuccess
     }
 
     // ── Native declarations — names MUST match JNI symbols in the .so ─────────
@@ -146,6 +150,7 @@ object MPVLib {
         fun eventProperty(property: String)
         fun eventProperty(property: String, value: Long)
         fun eventProperty(property: String, value: Boolean)
+        fun eventProperty(property: String, value: Double)  // ← required: descriptor (Ljava/lang/String;D)V
         fun eventProperty(property: String, value: String)
         fun event(eventId: Int)
     }
@@ -154,12 +159,33 @@ object MPVLib {
     fun addObserver(o: EventObserver)    { observers.add(o) }
     fun removeObserver(o: EventObserver) { observers.remove(o) }
 
-    // JNI callbacks — called from native event thread. DO NOT rename.
+    // ── JNI callbacks — called from native event thread ───────────────────────
+    //
+    // CRITICAL: every @JvmStatic fun here must match the descriptor string that
+    // init_methods_cache() looks up via GetStaticMethodID(). Missing methods
+    // cause GetStaticMethodID to return NULL + throw NoSuchMethodError, which
+    // aborts create() and crashes the app on the first video open.
+    //
+    // Confirmed from libplayer.so binary (strings extraction):
+    //   mpv_MPVLib_eventProperty_S   → (Ljava/lang/String;)V
+    //   mpv_MPVLib_eventProperty_Sb  → (Ljava/lang/String;Z)V   Boolean primitive
+    //   mpv_MPVLib_eventProperty_Sl  → (Ljava/lang/String;J)V   Long primitive
+    //   mpv_MPVLib_eventProperty_Sd  → (Ljava/lang/String;D)V   Double primitive ← was MISSING
+    //   mpv_MPVLib_eventProperty_SS  → (Ljava/lang/String;Ljava/lang/String;)V
+    //   mpv_MPVLib_event             → (I)V
+    //   mpv_MPVLib_logMessage_SiS    → (Ljava/lang/String;ILjava/lang/String;)V  ← was MISSING
+
+    @JvmStatic fun eventProperty(property: String)                 { if (isInitialized.get()) observers.forEach { it.eventProperty(property) } }
     @JvmStatic fun eventProperty(property: String, value: Long)    { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
     @JvmStatic fun eventProperty(property: String, value: Boolean) { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
+    @JvmStatic fun eventProperty(property: String, value: Double)  { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
     @JvmStatic fun eventProperty(property: String, value: String)  { if (isInitialized.get()) observers.forEach { it.eventProperty(property, value) } }
-    @JvmStatic fun eventProperty(property: String)                 { if (isInitialized.get()) observers.forEach { it.eventProperty(property) } }
     @JvmStatic fun event(eventId: Int)                             { if (isInitialized.get()) observers.forEach { it.event(eventId) } }
+
+    /** Called by native for mpv log output. Descriptor: (Ljava/lang/String;ILjava/lang/String;)V */
+    @JvmStatic fun logMessage(prefix: String, level: Int, text: String) {
+        if (level <= 5) Log.d(TAG, "[$prefix] $text")
+    }
 
     private const val TAG = "MPVLib"
 }
