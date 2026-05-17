@@ -52,7 +52,7 @@
 - Background playback
 
 ### 🎨 UI / UX
-- **Material You 3** — Dynamic Color (Android 12+)
+- **Material You 3** — Dynamic Color (Android 12+
 - Dark / Light / AMOLED mode
 - Smooth animations
 - Edge-to-edge display
@@ -67,119 +67,6 @@
 
 ---
 
-## 🏗️ Architecture
-
-```
-app/
-├── data/
-│   ├── local/          # Room DB + MediaStore
-│   └── repository/     # Repository implementations
-├── domain/
-│   ├── model/          # Data models
-│   ├── repository/     # Repository interfaces
-│   └── usecase/        # Business logic use cases
-├── presentation/
-│   ├── home/           # Home screen + ViewModel
-│   ├── player/         # Player screen + ViewModel
-│   ├── library/        # Library screen + ViewModel
-│   ├── settings/       # Settings screen + ViewModel
-│   ├── components/     # Reusable UI components
-│   ├── navigation/     # Compose Navigation
-│   └── theme/          # Material You 3 theme
-├── service/
-│   ├── RyouPlaybackService.kt   # Media3 SessionService
-│   └── MediaScannerService.kt  # Background scanner
-├── di/                 # Hilt DI modules
-└── util/               # Helpers
-```
-
-**Stack:** MVVM + Clean Architecture + Repository Pattern
-**DI:** Hilt
-**Async:** Kotlin Coroutines + Flow + StateFlow
-**Media:** Media3 ExoPlayer 1.5
-**DB:** Room
-**Prefs:** DataStore
-
----
-
-## 🚀 Build with GitHub Actions
-
-APK is automatically built on every push. No Android Studio needed!
-
-### Automatic Builds
-| Event | Result |
-|-------|--------|
-| Push to `main` | Debug + Release APK + Draft GitHub Release |
-| Push to `develop` | Debug + Release APK artifact |
-| Pull Request | Debug APK |
-| Manual trigger | Choose debug / release / both |
-
-### Download APK
-1. Go to **Actions** tab → select latest workflow run
-2. Under **Artifacts** → download `RyouPlayer-debug-*` or `RyouPlayer-release-*`
-
-### Version Format
-```
-v1.0.20260508-build42
-  │  │         └── GitHub Actions run number
-  │  └────────── build date (YYYYMMDD)
-  └─────────────── semantic version
-```
-
----
-
-## 🔑 APK Signing Setup
-
-### For local builds
-```bash
-# 1. Generate keystore
-keytool -genkey -v \
-  -keystore app/keystore/release.keystore \
-  -alias ryoustream \
-  -keyalg RSA -keysize 2048 -validity 10000
-
-# 2. Copy template
-cp signing.properties.template signing.properties
-
-# 3. Fill in your passwords in signing.properties
-# 4. Build
-./gradlew assembleRelease
-```
-
-### For GitHub Actions (CI/CD)
-Add these **GitHub Secrets** (Settings → Secrets → Actions):
-
-| Secret | Description |
-|--------|-------------|
-| `KEYSTORE_BASE64` | `base64 -i release.keystore` output |
-| `KEYSTORE_PASSWORD` | Keystore password |
-| `KEY_ALIAS` | Key alias (`ryoustream`) |
-| `KEY_PASSWORD` | Key password |
-
----
-
-## 🛠️ Local Setup (Optional)
-
-> You can build entirely via GitHub Actions without local tools.
-> For local development:
-
-```bash
-# Requirements: JDK 17+
-git clone https://github.com/ryoustream/RyouPlayer
-cd RyouPlayer
-
-# Debug build
-./gradlew assembleDebug
-
-# Release build (requires signing.properties)
-./gradlew assembleRelease
-
-# Install on connected device
-./gradlew installDebug
-```
-
----
-
 ## 📱 Requirements
 
 - **Android 12** (API 31) minimum
@@ -189,15 +76,6 @@ cd RyouPlayer
 
 ---
 
-## 🤝 Contributing
-
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'feat: add amazing feature'`
-4. Push: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
----
 
 ## 📄 License
 
