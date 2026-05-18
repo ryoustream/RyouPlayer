@@ -294,16 +294,6 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setAnimations,
                 )
             }
-            item {
-                SwitchSetting(
-                    icon = Icons.Default.Fullscreen,
-                    title = "Ignore Notch / Display Cutout",
-                    subtitle = "Extend player behind notch/hole-punch (full-screen video)",
-                    checked = s.ignoreNotch,
-                    onCheckedChange = viewModel::setIgnoreNotch,
-                )
-            }
-
             // ── ADVANCED ──────────────────────────────────────────────────────
             item { SectionHeader("Advanced") }
             item {

@@ -29,7 +29,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -529,7 +534,6 @@ private fun PlayerControls(
 // Subtitle Panel
 // ─────────────────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SubtitlePanel(
     state:      PlayerUiState,
@@ -537,98 +541,148 @@ private fun SubtitlePanel(
     onPickFile: () -> Unit,
     onDismiss:  () -> Unit,
 ) {
-    ModalBottomSheet(
+    // Compact floating popup — anchored to bottom-end, doesn't block the full video.
+    Dialog(
         onDismissRequest = onDismiss,
-        containerColor   = MaterialTheme.colorScheme.surface,
+        properties = DialogProperties(
+            dismissOnBackPress    = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false,
+        ),
     ) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            // ── Header ───────────────────────────────────────────────────────
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically,
+        // Position card at bottom-end corner of the screen
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+            Surface(
+                modifier      = Modifier
+                    .width(280.dp)
+                    .padding(bottom = 72.dp, end = 8.dp),
+                shape         = RoundedCornerShape(16.dp),
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp,
+                color         = MaterialTheme.colorScheme.surface,
             ) {
-                Text("Subtitles", style = MaterialTheme.typography.titleMedium)
-                Row {
-                    TextButton(onClick = viewModel::showSubtitleStyleSheet) {
-                        Icon(Icons.Default.Palette, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Style")
+                Column(Modifier.padding(8.dp)) {
+
+                    // ── Header ────────────────────────────────────────────────
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically,
+                    ) {
+                        Text("Subtitles", style = MaterialTheme.typography.titleSmall)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = viewModel::showSubtitleStyleSheet,
+                                modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Palette, "Style", Modifier.size(18.dp))
+                            }
+                            IconButton(onClick = onDismiss,
+                                modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Close, "Close", Modifier.size(18.dp))
+                            }
+                        }
                     }
-                    TextButton(onClick = onDismiss) { Text("Done") }
-                }
-            }
-            HorizontalDivider()
 
-            // ── Sub delay ────────────────────────────────────────────────────
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text("Delay:", style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.width(56.dp))
-                IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay - 500L) },
-                    Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Remove, null, Modifier.size(18.dp))
-                }
-                Text("${state.subtitleDelay}ms",
-                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(72.dp))
-                IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay + 500L) },
-                    Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                }
-                TextButton(onClick = { viewModel.setSubtitleDelay(0L) }) { Text("Reset") }
-            }
-            HorizontalDivider()
+                    // ── Delay strip ───────────────────────────────────────────
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay - 500L) },
+                            Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Remove, null, Modifier.size(14.dp))
+                        }
+                        Text(
+                            "Delay ${state.subtitleDelay}ms",
+                            style    = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.weight(1f),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                        IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay + 500L) },
+                            Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Add, null, Modifier.size(14.dp))
+                        }
+                        if (state.subtitleDelay != 0L) {
+                            TextButton(
+                                onClick  = { viewModel.setSubtitleDelay(0L) },
+                                modifier = Modifier.height(28.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp),
+                            ) { Text("Reset", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
 
-            // ── Off ──────────────────────────────────────────────────────────
-            ListItem(
-                headlineContent = { Text("Off") },
-                leadingContent  = {
-                    RadioButton(
-                        selected = !state.subtitleEnabled,
-                        onClick  = { viewModel.selectSubtitleTrack(null) },
-                    )
-                },
-                modifier = Modifier.clickable { viewModel.selectSubtitleTrack(null) },
-            )
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
-            // ── Embedded tracks ──────────────────────────────────────────────
-            if (state.subtitleTracks.isNotEmpty()) {
-                Text(
-                    "Embedded",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, top = 4.dp),
-                )
-                state.subtitleTracks.forEach { track ->
-                    ListItem(
-                        headlineContent = { Text(track.label) },
-                        leadingContent  = {
-                            RadioButton(
-                                // FIX: compare mpvId (not .index which is 0-based display index)
-                                selected = state.subtitleEnabled &&
-                                           state.selectedSubtitleTrack == track.mpvId,
-                                onClick  = { viewModel.selectSubtitleTrack(track) },
+                    // ── Track list (scrollable) ───────────────────────────────
+                    LazyColumn(Modifier.heightIn(max = 240.dp)) {
+                        // Off
+                        item {
+                            TrackRow(
+                                label    = "Off",
+                                selected = !state.subtitleEnabled,
+                                onClick  = { viewModel.selectSubtitleTrack(null); onDismiss() },
                             )
-                        },
-                        modifier = Modifier.clickable { viewModel.selectSubtitleTrack(track) },
-                    )
+                        }
+                        // Embedded tracks
+                        if (state.subtitleTracks.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Embedded",
+                                    style    = MaterialTheme.typography.labelSmall,
+                                    color    = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 2.dp),
+                                )
+                            }
+                            items(state.subtitleTracks) { track ->
+                                TrackRow(
+                                    label    = track.label,
+                                    selected = state.subtitleEnabled &&
+                                               state.selectedSubtitleTrack == track.mpvId,
+                                    onClick  = { viewModel.selectSubtitleTrack(track); onDismiss() },
+                                )
+                            }
+                        }
+                        // Load external
+                        item {
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onPickFile(); onDismiss() }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(Icons.Default.FolderOpen, null, Modifier.size(18.dp))
+                                Text("Load file…", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
                 }
             }
-
-            HorizontalDivider()
-            // ── Load external ─────────────────────────────────────────────────
-            ListItem(
-                headlineContent = { Text("Load subtitle file…") },
-                leadingContent  = { Icon(Icons.Default.FolderOpen, null) },
-                modifier        = Modifier.clickable { onPickFile(); onDismiss() },
-            )
         }
+    }
+}
+
+@Composable
+private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick  = onClick,
+            modifier = Modifier.size(32.dp),
+        )
+        Text(
+            text  = label,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f).padding(start = 4.dp),
+        )
     }
 }
 
