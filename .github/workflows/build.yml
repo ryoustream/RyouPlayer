@@ -218,7 +218,9 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             mkdir -p app/keystore
-            echo "$KEYSTORE_BASE64" | base64 --decode > app/keystore/release.keystore
+            # Strip all whitespace before decoding — echo adds a trailing newline
+            # and secrets may contain line breaks that corrupt the binary output.
+            printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > app/keystore/release.keystore
             echo "✅ Keystore decoded: $(stat -c%s app/keystore/release.keystore) bytes"
           else
             echo "⚠️ KEYSTORE_BASE64 not set — APK will be unsigned"
