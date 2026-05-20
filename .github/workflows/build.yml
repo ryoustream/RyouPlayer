@@ -244,13 +244,9 @@ jobs:
               STORE_TYPE="PKCS12"
             fi
             echo "🔑 Keystore format: $STORE_TYPE (magic=$MAGIC)"
-            cat > signing.properties <<EOF
-storeFile=keystore/release.keystore
-storePassword=${KEYSTORE_PASSWORD}
-keyAlias=${KEY_ALIAS}
-keyPassword=${KEY_PASSWORD}
-storeType=${STORE_TYPE}
-EOF
+            printf 'storeFile=keystore/release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\nstoreType=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" "$STORE_TYPE" \
+              > signing.properties
             echo "✅ signing.properties created (storeType=$STORE_TYPE)"
           fi
 
