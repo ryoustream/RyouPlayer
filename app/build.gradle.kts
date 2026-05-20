@@ -18,7 +18,7 @@ plugins {
 val buildDate: String = SimpleDateFormat("yyyyMMdd").format(Date())
 val buildTime: String = SimpleDateFormat("HHmm").format(Date())
 val versionMajor = 1
-val versionMinor = 0
+val versionMinor = 1
 val versionPatch = 0
 
 // Auto-increment from BUILD_NUMBER env (GitHub Actions) or fallback to 1
@@ -87,11 +87,14 @@ android {
     signingConfigs {
         create("release") {
             if (signingProps != null) {
-                // From signing.properties file (local build)
+                // From signing.properties file (CI or local)
                 storeFile = file(signingProps.getProperty("storeFile", "keystore/release.keystore"))
                 storePassword = signingProps.getProperty("storePassword", "")
                 keyAlias = signingProps.getProperty("keyAlias", "ryoustream")
                 keyPassword = signingProps.getProperty("keyPassword", "")
+                // storeType: auto-detected by workflow (JKS or PKCS12)
+                val ksType = signingProps.getProperty("storeType", "")
+                if (ksType.isNotEmpty()) storeType = ksType
             } else {
                 // From environment variables (GitHub Actions)
                 val keystoreB64 = System.getenv("KEYSTORE_BASE64")

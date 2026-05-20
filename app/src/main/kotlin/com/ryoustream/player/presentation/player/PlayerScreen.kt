@@ -435,9 +435,19 @@ private fun PlayerControls(
         // ── Center transport ─────────────────────────────────────────────────
         Row(
             Modifier.align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment     = Alignment.CenterVertically,
         ) {
+            // Skip Previous
+            IconButton(
+                onClick  = viewModel::playPrev,
+                enabled  = state.hasPrev,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(Icons.Default.SkipPrevious, "Previous",
+                    tint = if (state.hasPrev) Color.White else Color.White.copy(0.3f),
+                    modifier = Modifier.size(30.dp))
+            }
             IconButton(onClick = { viewModel.seekBackward(10) }, Modifier.size(52.dp)) {
                 Icon(Icons.Default.Replay10, "−10s",
                     tint = Color.White, modifier = Modifier.size(38.dp))
@@ -462,6 +472,16 @@ private fun PlayerControls(
             IconButton(onClick = { viewModel.seekForward(10) }, Modifier.size(52.dp)) {
                 Icon(Icons.Default.Forward10, "+10s",
                     tint = Color.White, modifier = Modifier.size(38.dp))
+            }
+            // Skip Next
+            IconButton(
+                onClick  = viewModel::playNext,
+                enabled  = state.hasNext,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(Icons.Default.SkipNext, "Next",
+                    tint = if (state.hasNext) Color.White else Color.White.copy(0.3f),
+                    modifier = Modifier.size(30.dp))
             }
         }
 
@@ -491,8 +511,8 @@ private fun PlayerControls(
                 ),
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                // Left: repeat + shuffle
-                Row {
+                // Left: repeat + shuffle + stop + autoNext
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = viewModel::toggleRepeatMode) {
                         Icon(
                             when (pb.repeatMode) {
@@ -504,12 +524,17 @@ private fun PlayerControls(
                                 Color.White.copy(0.4f) else MaterialTheme.colorScheme.primary,
                         )
                     }
-                    IconButton(onClick = viewModel::toggleShuffle) {
+                    // Auto-next toggle (skip to next file when video ends)
+                    IconButton(onClick = viewModel::toggleAutoNext) {
                         Icon(
-                            Icons.Default.Shuffle, "Shuffle",
-                            tint = if (pb.shuffleEnabled) MaterialTheme.colorScheme.primary
+                            Icons.Default.SkipNext, "Auto-next",
+                            tint = if (state.autoNext) MaterialTheme.colorScheme.primary
                                    else Color.White.copy(0.4f),
                         )
+                    }
+                    // Stop
+                    IconButton(onClick = viewModel::stop) {
+                        Icon(Icons.Default.Stop, "Stop", tint = Color.White.copy(0.75f))
                     }
                 }
                 // Right: subtitle + audio

@@ -1,7 +1,9 @@
 package com.ryoustream.player.presentation.player
 
 import android.content.Context
+import android.content.ContentUris
 import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,11 +27,13 @@ import `is`.xyz.mpv.seekTo
 import `is`.xyz.mpv.selectTrack
 import `is`.xyz.mpv.setSpeed
 import `is`.xyz.mpv.setVolumePct
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import javax.inject.Inject
 
@@ -85,6 +89,10 @@ data class PlayerUiState(
     val chapterMarks: List<Pair<Long, String>> = emptyList(),
     val mediaTitle: String                   = "",
     val error: String?                       = null,
+    // Folder navigation
+    val hasPrev:    Boolean                  = false,
+    val hasNext:    Boolean                  = false,
+    val autoNext:   Boolean                  = true,
     // mpv-specific
     val mpvReady: Boolean                    = false,
     val isBuffering: Boolean                 = false,
@@ -104,6 +112,10 @@ class PlayerViewModel @Inject constructor(
     private var hideJob: Job? = null
     private var currentMediaId = 0L
     private var pendingUri: Uri? = null
+
+    // ── Folder navigation ────────────────────────────────────────────────────
+    private var _folderFiles: List<Uri> = emptyList()
+    private var _folderIndex: Int       = -1
 
     // ─── Init ─────────────────────────────────────────────────────────────────
 
@@ -226,6 +238,91 @@ class PlayerViewModel @Inject constructor(
             MPVLib.loadFile(path, startPosition)
             showControlsTemporarily()
             startPositionUpdates()
+
+            // Scan sibling files in the same folder for next/prev navigation
+            val folderUris = scanFolderFiles(uri)
+            _folderFiles = folderUris
+            _folderIndex = folderUris.indexOfFirst { it.toString() == uri.toString() }
+                .takeIf { it >= 0 } ?: 0
+            _state.update { it.copy(
+                hasPrev = _folderIndex > 0,
+                hasNext = _folderIndex < folderUris.lastIndex,
+            )}
+        }
+    }
+
+    /** Play the next video in the same folder. */
+    fun playNext() {
+        val files = _folderFiles
+        val next = _folderIndex + 1
+        if (next < files.size) playUri(files[next])
+    }
+
+    /** Play the previous video (or restart if > 3 s in). */
+    fun playPrev() {
+        val pos = _state.value.playbackState.currentPosition
+        if (pos > 3_000L) {
+            MPVLib.seekTo(0)
+            return
+        }
+        val prev = _folderIndex - 1
+        if (prev >= 0) playUri(_folderFiles[prev])
+    }
+
+    /** Stop playback entirely (without navigating away). */
+    fun stop() {
+        savePosition()
+        stopPositionUpdates()
+        runCatching { MPVLib.command(arrayOf("stop")) }
+        _state.update { it.copy(
+            playbackState = it.playbackState.copy(isPlaying = false, isPaused = false),
+            isBuffering   = false,
+        )}
+    }
+
+    /** Toggle auto-next setting. */
+    fun toggleAutoNext() = _state.update { it.copy(autoNext = !it.autoNext) }
+
+    /** Scan the parent folder (MediaStore or filesystem) for video siblings. */
+    private suspend fun scanFolderFiles(current: Uri): List<Uri> = withContext(Dispatchers.IO) {
+        try {
+            when (current.scheme) {
+                "content" -> {
+                    val bucketId = context.contentResolver.query(
+                        current,
+                        arrayOf(MediaStore.Video.Media.BUCKET_ID),
+                        null, null, null,
+                    )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                        ?: return@withContext listOf(current)
+
+                    context.contentResolver.query(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        arrayOf(MediaStore.Video.Media._ID),
+                        "${MediaStore.Video.Media.BUCKET_ID} = ?",
+                        arrayOf(bucketId),
+                        "${MediaStore.Video.Media.DISPLAY_NAME} ASC",
+                    )?.use { c ->
+                        val col = c.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                        buildList { while (c.moveToNext()) add(
+                            ContentUris.withAppendedId(
+                                MediaStore.Video.Media.EXTERNAL_CONTENT_URI, c.getLong(col))
+                        )}
+                    } ?: listOf(current)
+                }
+                "file" -> {
+                    val parent = java.io.File(current.path ?: return@withContext listOf(current)).parentFile
+                        ?: return@withContext listOf(current)
+                    val videoExts = setOf("mp4","mkv","avi","mov","wmv","flv","webm","m4v","ts","3gp")
+                    parent.listFiles { f -> f.isFile && f.extension.lowercase() in videoExts }
+                        ?.sortedBy { it.name }
+                        ?.map { Uri.fromFile(it) }
+                        ?: listOf(current)
+                }
+                else -> listOf(current)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "scanFolderFiles: $e")
+            listOf(current)
         }
     }
 
@@ -244,7 +341,11 @@ class PlayerViewModel @Inject constructor(
         when (property) {
             "video-params/w" -> _state.update { it.copy(videoWidth  = value.toInt()) }
             "video-params/h" -> _state.update { it.copy(videoHeight = value.toInt()) }
-            "sid" -> _state.update { it.copy(selectedSubtitleTrack = value.toInt()) }
+            "sid" -> _state.update { it.copy(
+                selectedSubtitleTrack = value.toInt(),
+                // sid=0 means mpv disabled/cleared subtitles
+                subtitleEnabled = value > 0,
+            )}
             "aid" -> _state.update { it.copy(selectedAudioTrack    = value.toInt()) }
         }
     }
@@ -300,7 +401,12 @@ class PlayerViewModel @Inject constructor(
     override fun event(eventId: Int) {
         when (eventId) {
             MPVLib.MPV_EVENT_FILE_LOADED -> {
-                _state.update { it.copy(isBuffering = false) }
+                _state.update { it.copy(
+                    isBuffering = false,
+                    // Ensure UI shows Pause button immediately — don't wait for the
+                    // "pause" property callback which can race with isInitialized flag.
+                    playbackState = it.playbackState.copy(isPlaying = true, isPaused = false),
+                )}
                 if (_pendingSeekMs > 0L) {
                     MPVLib.seekTo(_pendingSeekMs)
                     _pendingSeekMs = 0L
@@ -316,6 +422,18 @@ class PlayerViewModel @Inject constructor(
                 stopPositionUpdates()
                 _state.update { it.copy(isBuffering = false) }
                 savePosition()
+                // Auto-next: play next sibling file when video ends
+                val s = _state.value
+                if (s.autoNext && s.playbackState.repeatMode != RepeatMode.ONE) {
+                    val nextIdx = _folderIndex + 1
+                    val wrap    = s.playbackState.repeatMode == RepeatMode.FOLDER
+                    viewModelScope.launch {
+                        when {
+                            nextIdx < _folderFiles.size -> playUri(_folderFiles[nextIdx])
+                            wrap && _folderFiles.size > 1 -> playUri(_folderFiles[0])
+                        }
+                    }
+                }
             }
             MPVLib.MPV_EVENT_SEEK -> {
                 _state.update { it.copy(isBuffering = true) }
@@ -460,6 +578,12 @@ class PlayerViewModel @Inject constructor(
 
     fun playPause() {
         val paused = _state.value.playbackState.isPaused
+        // Optimistic UI — flip state immediately so the icon responds on tap.
+        // mpv will confirm via "pause" property callback which will re-sync.
+        _state.update { s -> s.copy(playbackState = s.playbackState.copy(
+            isPaused  = !paused,
+            isPlaying = paused,
+        ))}
         MPVLib.pause(!paused)
     }
 

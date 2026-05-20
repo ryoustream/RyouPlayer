@@ -233,13 +233,25 @@ jobs:
           KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_PASSWORD" ]; then
+            # Auto-detect JKS vs PKCS12 from magic bytes.
+            # JKS: starts with feedfeed (v2) or cececece (v1)
+            # PKCS12: starts with 3082 (ASN.1 SEQUENCE)
+            MAGIC=$(od -A n -N 4 -t x1 app/keystore/release.keystore \
+                    | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
+            if [[ "$MAGIC" == feedfeed* ]] || [[ "$MAGIC" == cececece* ]]; then
+              STORE_TYPE="JKS"
+            else
+              STORE_TYPE="PKCS12"
+            fi
+            echo "🔑 Keystore format: $STORE_TYPE (magic=$MAGIC)"
             cat > signing.properties <<EOF
-          storeFile=keystore/release.keystore
-          storePassword=${KEYSTORE_PASSWORD}
-          keyAlias=${KEY_ALIAS}
-          keyPassword=${KEY_PASSWORD}
-          EOF
-            echo "✅ signing.properties created"
+storeFile=keystore/release.keystore
+storePassword=${KEYSTORE_PASSWORD}
+keyAlias=${KEY_ALIAS}
+keyPassword=${KEY_PASSWORD}
+storeType=${STORE_TYPE}
+EOF
+            echo "✅ signing.properties created (storeType=$STORE_TYPE)"
           fi
 
       - name: 🏗️ Build Release APK
