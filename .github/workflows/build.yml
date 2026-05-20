@@ -19,7 +19,7 @@ on:
 
 env:
   JAVA_VERSION: '17'
-  GRADLE_TARGET: '8.11.1'
+  GRADLE_VERSION: '8.11.1'
 
 permissions:
   contents: write
@@ -49,6 +49,11 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
+      - name: 🔧 Setup Gradle ${{ env.GRADLE_VERSION }}
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: false
 
       - name: 📋 Set build metadata
         id: meta
@@ -66,25 +71,14 @@ jobs:
       - name: 🔧 Generate Gradle Wrapper
         run: |
           echo "System Gradle version:"
-          gradle --version | grep "^Gradle"
-          echo "Generating wrapper for Gradle ${GRADLE_TARGET}..."
+          gradle --version | head -2
+          echo "Generating wrapper for Gradle ${{ env.GRADLE_VERSION }}..."
           gradle wrapper \
-            --gradle-version "${GRADLE_TARGET}" \
+            --gradle-version "${{ env.GRADLE_VERSION }}" \
             --distribution-type bin
           chmod +x gradlew
           echo "✅ Wrapper generated"
           ls -lh gradle/wrapper/
-
-      - name: 🐘 Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-
-            ${{ runner.os }}-gradle-
 
       - name: 📦 Cache MPV native libs
         id: cache-mpv
@@ -167,6 +161,11 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
+      - name: 🔧 Setup Gradle ${{ env.GRADLE_VERSION }}
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: false
 
       - name: 📋 Set build metadata
         id: meta
@@ -184,20 +183,9 @@ jobs:
       - name: 🔧 Generate Gradle Wrapper
         run: |
           gradle wrapper \
-            --gradle-version "${GRADLE_TARGET}" \
+            --gradle-version "${{ env.GRADLE_VERSION }}" \
             --distribution-type bin
           chmod +x gradlew
-
-      - name: 🐘 Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-${{ env.GRADLE_TARGET }}-
-            ${{ runner.os }}-gradle-
 
       - name: 📦 Cache MPV native libs
         id: cache-mpv
@@ -218,8 +206,6 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             mkdir -p app/keystore
-            # Strip all whitespace before decoding — echo adds a trailing newline
-            # and secrets may contain line breaks that corrupt the binary output.
             printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > app/keystore/release.keystore
             echo "✅ Keystore decoded: $(stat -c%s app/keystore/release.keystore) bytes"
           else
@@ -233,9 +219,6 @@ jobs:
           KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_PASSWORD" ]; then
-            # Auto-detect JKS vs PKCS12 from magic bytes.
-            # JKS: starts with feedfeed (v2) or cececece (v1)
-            # PKCS12: starts with 3082 (ASN.1 SEQUENCE)
             MAGIC=$(od -A n -N 4 -t x1 app/keystore/release.keystore \
                     | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
             if [[ "$MAGIC" == feedfeed* ]] || [[ "$MAGIC" == cececece* ]]; then
