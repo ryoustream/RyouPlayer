@@ -426,7 +426,7 @@ class PlayerViewModel @Inject constructor(
                 val s = _state.value
                 if (s.autoNext && s.playbackState.repeatMode != RepeatMode.ONE) {
                     val nextIdx = _folderIndex + 1
-                    val wrap    = s.playbackState.repeatMode == RepeatMode.FOLDER
+                    val wrap    = s.playbackState.repeatMode == RepeatMode.ALL
                     viewModelScope.launch {
                         when {
                             nextIdx < _folderFiles.size -> playUri(_folderFiles[nextIdx])
