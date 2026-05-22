@@ -235,19 +235,20 @@ class PlayerViewModel @Inject constructor(
                 else      -> uri.toString()   // http/rtsp/hls/etc.
             }
 
-            MPVLib.loadFile(path, startPosition)
-            showControlsTemporarily()
-            startPositionUpdates()
-
-            // Scan sibling files in the same folder for next/prev navigation
+            // Scan sibling files BEFORE starting playback so _folderFiles is
+            // already populated when MPV_EVENT_END_FILE fires.
             val folderUris = scanFolderFiles(uri)
-            _folderFiles = folderUris
-            _folderIndex = folderUris.indexOfFirst { it.toString() == uri.toString() }
+            _folderFiles  = folderUris
+            _folderIndex  = folderUris.indexOfFirst { it.toString() == uri.toString() }
                 .takeIf { it >= 0 } ?: 0
             _state.update { it.copy(
                 hasPrev = _folderIndex > 0,
                 hasNext = _folderIndex < folderUris.lastIndex,
             )}
+
+            MPVLib.loadFile(path, startPosition)
+            showControlsTemporarily()
+            startPositionUpdates()
         }
     }
 

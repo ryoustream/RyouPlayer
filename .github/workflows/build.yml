@@ -56,7 +56,7 @@ jobs:
           BUILD_NUMBER=${{ github.run_number }}
           COMMIT_HASH=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date +'%Y%m%d')
-          VERSION_NAME="v1.0.${BUILD_DATE}-build${BUILD_NUMBER}"
+          VERSION_NAME="v1.1.${BUILD_DATE}-build${BUILD_NUMBER}"
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
           echo "COMMIT_HASH=${COMMIT_HASH}"   >> $GITHUB_OUTPUT
           echo "BUILD_DATE=${BUILD_DATE}"     >> $GITHUB_OUTPUT
@@ -174,7 +174,7 @@ jobs:
           BUILD_NUMBER=${{ github.run_number }}
           COMMIT_HASH=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date +'%Y%m%d')
-          VERSION_NAME="v1.0.${BUILD_DATE}-build${BUILD_NUMBER}"
+          VERSION_NAME="v1.1.${BUILD_DATE}-build${BUILD_NUMBER}"
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
           echo "COMMIT_HASH=${COMMIT_HASH}"   >> $GITHUB_OUTPUT
           echo "BUILD_DATE=${BUILD_DATE}"     >> $GITHUB_OUTPUT
@@ -233,21 +233,28 @@ jobs:
           KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_PASSWORD" ]; then
-            # Auto-detect JKS vs PKCS12 from magic bytes.
-            # JKS: starts with feedfeed (v2) or cececece (v1)
-            # PKCS12: starts with 3082 (ASN.1 SEQUENCE)
-            MAGIC=$(od -A n -N 4 -t x1 app/keystore/release.keystore \
-                    | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
-            if [[ "$MAGIC" == feedfeed* ]] || [[ "$MAGIC" == cececece* ]]; then
-              STORE_TYPE="JKS"
-            else
-              STORE_TYPE="PKCS12"
-            fi
-            echo "🔑 Keystore format: $STORE_TYPE (magic=$MAGIC)"
-            printf 'storeFile=keystore/release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\nstoreType=%s\n' \
-              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" "$STORE_TYPE" \
+            # AGP 8.x requires PKCS12. Convert the keystore regardless of its
+            # original format — keytool handles both JKS and PKCS12 as source.
+            echo "🔄 Converting keystore to PKCS12..."
+            keytool -importkeystore \
+              -srckeystore  app/keystore/release.keystore \
+              -srcstorepass "$KEYSTORE_PASSWORD" \
+              -srcalias     "$KEY_ALIAS" \
+              -srckeypass   "$KEY_PASSWORD" \
+              -destkeystore app/keystore/release.p12 \
+              -deststoretype PKCS12 \
+              -deststorepass "$KEYSTORE_PASSWORD" \
+              -destalias    "$KEY_ALIAS" \
+              -destkeypass  "$KEY_PASSWORD" \
+              -noprompt 2>&1 && \
+            mv app/keystore/release.p12 app/keystore/release.keystore && \
+            echo "✅ Converted to PKCS12 ($(stat -c%s app/keystore/release.keystore) bytes)" || \
+            echo "⚠️  keytool conversion failed — using original keystore as-is"
+
+            printf 'storeFile=keystore/release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\nstoreType=PKCS12\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" \
               > signing.properties
-            echo "✅ signing.properties created (storeType=$STORE_TYPE)"
+            echo "✅ signing.properties created (storeType=PKCS12)"
           fi
 
       - name: 🏗️ Build Release APK
