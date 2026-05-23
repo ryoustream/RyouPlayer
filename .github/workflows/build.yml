@@ -244,6 +244,9 @@ jobs:
 
           # Step 3: if invalid or missing, generate a new PKCS12 keystore
           if [ "$VALID" = "false" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            # Remove the corrupt file first — keytool -genkey opens existing
+            # keystore before writing, so a corrupt file causes EOFException.
+            rm -f app/keystore/release.keystore
             keytool -genkey -v \
               -keystore app/keystore/release.keystore \
               -storetype PKCS12 \
