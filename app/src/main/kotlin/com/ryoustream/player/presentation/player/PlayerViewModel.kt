@@ -219,55 +219,98 @@ class PlayerViewModel @Inject constructor(
         if (!_state.value.mpvReady) { pendingUri = uri; return }
 
         viewModelScope.launch {
-            val domainItem = getMediaByUriUseCase(uri)
-            currentMediaId = domainItem?.id ?: 0L
-
-            _state.update {
-                it.copy(
-                    mediaTitle    = domainItem?.displayName ?: uri.lastPathSegment ?: "",
-                    playbackState = it.playbackState.copy(mediaItem = domainItem),
-                )
-            }
-
-            val path = when (uri.scheme) {
-                "content" -> uri.toString()   // mpv handles content:// URIs natively
-                "file"    -> uri.path ?: uri.toString()
-                else      -> uri.toString()   // http/rtsp/hls/etc.
-            }
-
-            // Scan sibling files BEFORE starting playback so _folderFiles is
-            // already populated when MPV_EVENT_END_FILE fires.
+            // Scan sibling files FIRST — _folderFiles must be ready before
+            // MPV_EVENT_END_FILE fires (auto-next depends on it).
             val folderUris = scanFolderFiles(uri)
             _folderFiles  = folderUris
-            _folderIndex  = folderUris.indexOfFirst { it.toString() == uri.toString() }
-                .takeIf { it >= 0 } ?: 0
-            _state.update { it.copy(
-                hasPrev = _folderIndex > 0,
-                hasNext = _folderIndex < folderUris.lastIndex,
-            )}
 
-            MPVLib.loadFile(path, startPosition)
-            showControlsTemporarily()
-            startPositionUpdates()
+            // Robust index matching: try toString() first, then by media ID
+            val idx = folderUris.indexOfFirst { it.toString() == uri.toString() }
+                .takeIf { it >= 0 }
+                ?: folderUris.indexOfFirst { extractMediaId(it) == extractMediaId(uri) }
+                    .takeIf { it >= 0 }
+                ?: 0
+            _folderIndex = idx
+
+            _loadAtIndex(idx, uri, startPosition)
         }
     }
 
-    /** Play the next video in the same folder. */
-    fun playNext() {
-        val files = _folderFiles
-        val next = _folderIndex + 1
-        if (next < files.size) playUri(files[next])
+    /**
+     * Internal: load a file by folder index without re-scanning.
+     * Used by playNext / playPrev / auto-next to avoid index drift.
+     */
+    private fun playAtIndex(idx: Int) {
+        val uri = _folderFiles.getOrNull(idx) ?: return
+        _folderIndex = idx
+        viewModelScope.launch { _loadAtIndex(idx, uri, 0L) }
     }
 
-    /** Play the previous video (or restart if > 3 s in). */
+    /** Core load: resolve title, update state, call mpv. */
+    private suspend fun _loadAtIndex(idx: Int, uri: Uri, startMs: Long) {
+        val domainItem   = getMediaByUriUseCase(uri)
+        val displayTitle = domainItem?.displayName
+            ?: resolveDisplayName(uri)   // query DISPLAY_NAME — never use lastPathSegment
+            ?: uri.lastPathSegment ?: ""
+
+        currentMediaId = domainItem?.id ?: 0L
+
+        _state.update {
+            it.copy(
+                mediaTitle    = displayTitle,
+                playbackState = it.playbackState.copy(mediaItem = domainItem),
+                hasPrev       = idx > 0,
+                hasNext       = idx < _folderFiles.lastIndex,
+            )
+        }
+
+        val path = when (uri.scheme) {
+            "content" -> uri.toString()
+            "file"    -> uri.path ?: uri.toString()
+            else      -> uri.toString()
+        }
+
+        MPVLib.loadFile(path, startMs)
+        showControlsTemporarily()
+        startPositionUpdates()
+    }
+
+    /** Query actual filename from MediaStore / filesystem — never expose raw media IDs. */
+    private suspend fun resolveDisplayName(uri: Uri): String? = withContext(Dispatchers.IO) {
+        try {
+            when (uri.scheme) {
+                "file" -> java.io.File(uri.path ?: return@withContext null).name
+                "content" -> {
+                    val cols = arrayOf(
+                        MediaStore.Video.Media.DISPLAY_NAME,
+                        MediaStore.MediaColumns.DISPLAY_NAME,
+                    )
+                    context.contentResolver.query(uri, cols, null, null, null)
+                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                }
+                else -> null
+            }
+        } catch (_: Exception) { null }
+    }
+
+    /** Extract numeric media ID from a MediaStore content URI, or null. */
+    private fun extractMediaId(uri: Uri): String? =
+        if (uri.scheme == "content") uri.lastPathSegment else null
+
+    /** Play the next video in the same folder (no re-scan, instant index update). */
+    fun playNext() {
+        val next = _folderIndex + 1
+        if (next < _folderFiles.size) playAtIndex(next)
+    }
+
+    /** Play the previous video, or restart current if > 3 s in (no re-scan). */
     fun playPrev() {
-        val pos = _state.value.playbackState.currentPosition
-        if (pos > 3_000L) {
+        if (_state.value.playbackState.currentPosition > 3_000L) {
             MPVLib.seekTo(0)
             return
         }
         val prev = _folderIndex - 1
-        if (prev >= 0) playUri(_folderFiles[prev])
+        if (prev >= 0) playAtIndex(prev)
     }
 
     /** Stop playback entirely (without navigating away). */
@@ -428,11 +471,9 @@ class PlayerViewModel @Inject constructor(
                 if (s.autoNext && s.playbackState.repeatMode != RepeatMode.ONE) {
                     val nextIdx = _folderIndex + 1
                     val wrap    = s.playbackState.repeatMode == RepeatMode.ALL
-                    viewModelScope.launch {
-                        when {
-                            nextIdx < _folderFiles.size -> playUri(_folderFiles[nextIdx])
-                            wrap && _folderFiles.size > 1 -> playUri(_folderFiles[0])
-                        }
+                    when {
+                        nextIdx < _folderFiles.size         -> playAtIndex(nextIdx)
+                        wrap && _folderFiles.size > 1       -> playAtIndex(0)
                     }
                 }
             }
