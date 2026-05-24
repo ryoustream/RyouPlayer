@@ -90,9 +90,13 @@ data class PlayerUiState(
     val mediaTitle: String                   = "",
     val error: String?                       = null,
     // Folder navigation
-    val hasPrev:    Boolean                  = false,
-    val hasNext:    Boolean                  = false,
-    val autoNext:   Boolean                  = true,
+    val hasPrev:         Boolean                  = false,
+    val hasNext:         Boolean                  = false,
+    val autoNext:        Boolean                  = true,
+    val showHiddenFiles: Boolean                  = false,
+    // Video info overlay
+    val showVideoInfo:   Boolean                  = false,
+    val videoInfo:       Map<String, String>      = emptyMap(),
     // mpv-specific
     val mpvReady: Boolean                    = false,
     val isBuffering: Boolean                 = false,
@@ -327,8 +331,66 @@ class PlayerViewModel @Inject constructor(
     /** Toggle auto-next setting. */
     fun toggleAutoNext() = _state.update { it.copy(autoNext = !it.autoNext) }
 
-    /** Scan the parent folder (MediaStore or filesystem) for video siblings. */
+    /** Toggle hidden files visibility (re-scans on next playUri). */
+    fun toggleShowHiddenFiles() = _state.update { it.copy(showHiddenFiles = !it.showHiddenFiles) }
+
+    /** Show/hide the video info overlay. Fetches fresh metadata from mpv when shown. */
+    fun toggleVideoInfo() {
+        val showing = !_state.value.showVideoInfo
+        _state.update { it.copy(showVideoInfo = showing) }
+        if (showing) viewModelScope.launch { fetchVideoInfo() }
+    }
+
+    private suspend fun fetchVideoInfo() {
+        if (!MPVLib.isInitialized.get()) return
+        val info = buildMap<String, String> {
+            fun mpvStr(prop: String) = runCatching {
+                MPVLib.getPropertyString(prop)
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+
+            mpvStr("filename")?.let { put("File", it) }
+            mpvStr("path")?.let { put("Path", it) }
+
+            val w = mpvStr("video-params/w"); val h = mpvStr("video-params/h")
+            if (w != null && h != null) put("Resolution", "${w}×${h}")
+
+            mpvStr("video-codec")?.let { put("Video Codec", it) }
+            mpvStr("video-format")?.let { put("Video Format", it) }
+            mpvStr("container-fps")?.let {
+                put("FPS", "%.2f".format(it.toDoubleOrNull() ?: 0.0))
+            }
+            mpvStr("video-bitrate")?.let {
+                val kbps = (it.toLongOrNull() ?: 0L) / 1000L
+                if (kbps > 0) put("Video Bitrate", "$kbps kbps")
+            }
+            mpvStr("audio-codec")?.let { put("Audio Codec", it) }
+            mpvStr("audio-params/samplerate")?.let { put("Sample Rate", "$it Hz") }
+            mpvStr("audio-params/channels")?.let { put("Channels", it) }
+            mpvStr("audio-bitrate")?.let {
+                val kbps = (it.toLongOrNull() ?: 0L) / 1000L
+                if (kbps > 0) put("Audio Bitrate", "$kbps kbps")
+            }
+            mpvStr("file-size")?.let {
+                val mb = (it.toLongOrNull() ?: 0L) / 1_048_576L
+                if (mb > 0) put("File Size", "$mb MB")
+            }
+            mpvStr("file-format")?.let { put("Container", it) }
+            mpvStr("duration")?.let {
+                val secs = it.toDoubleOrNull()?.toLong() ?: 0L
+                put("Duration", "%d:%02d:%02d".format(secs/3600, (secs%3600)/60, secs%60))
+            }
+            val subCount  = _state.value.subtitleTracks.size
+            val audCount  = _state.value.audioTracks.size
+            if (subCount > 0)  put("Subtitle Tracks", "$subCount")
+            if (audCount > 0)  put("Audio Tracks", "$audCount")
+        }
+        _state.update { it.copy(videoInfo = info) }
+    }
+
+    /** Scan the parent folder (MediaStore or filesystem) for video siblings.
+     *  Uses natural (numeric-aware) sort so "2.mkv" comes before "10.mkv". */
     private suspend fun scanFolderFiles(current: Uri): List<Uri> = withContext(Dispatchers.IO) {
+        val showHidden = _state.value.showHiddenFiles
         try {
             when (current.scheme) {
                 "content" -> {
@@ -339,28 +401,41 @@ class PlayerViewModel @Inject constructor(
                     )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
                         ?: return@withContext listOf(current)
 
+                    // Fetch _ID + DISPLAY_NAME so we can natural-sort in Kotlin
                     context.contentResolver.query(
                         MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                        arrayOf(MediaStore.Video.Media._ID),
+                        arrayOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME),
                         "${MediaStore.Video.Media.BUCKET_ID} = ?",
                         arrayOf(bucketId),
-                        "${MediaStore.Video.Media.DISPLAY_NAME} ASC",
+                        null, // sort in Kotlin for natural order
                     )?.use { c ->
-                        val col = c.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                        buildList { while (c.moveToNext()) add(
-                            ContentUris.withAppendedId(
-                                MediaStore.Video.Media.EXTERNAL_CONTENT_URI, c.getLong(col))
-                        )}
-                    } ?: listOf(current)
+                        val idCol   = c.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                        val nameCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                        buildList {
+                            while (c.moveToNext()) {
+                                val name = c.getString(nameCol) ?: ""
+                                if (!showHidden && name.startsWith(".")) continue
+                                add(name to ContentUris.withAppendedId(
+                                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI, c.getLong(idCol)))
+                            }
+                        }
+                    }
+                    ?.sortedWith(Comparator { a, b -> naturalCompare(a.first, b.first) })
+                    ?.map { it.second }
+                    ?: listOf(current)
                 }
                 "file" -> {
                     val parent = java.io.File(current.path ?: return@withContext listOf(current)).parentFile
                         ?: return@withContext listOf(current)
                     val videoExts = setOf("mp4","mkv","avi","mov","wmv","flv","webm","m4v","ts","3gp")
-                    parent.listFiles { f -> f.isFile && f.extension.lowercase() in videoExts }
-                        ?.sortedBy { it.name }
-                        ?.map { Uri.fromFile(it) }
-                        ?: listOf(current)
+                    parent.listFiles { f ->
+                        f.isFile &&
+                        f.extension.lowercase() in videoExts &&
+                        (showHidden || !f.name.startsWith("."))
+                    }
+                    ?.sortedWith(Comparator { a, b -> naturalCompare(a.name, b.name) })
+                    ?.map { Uri.fromFile(it) }
+                    ?: listOf(current)
                 }
                 else -> listOf(current)
             }
@@ -368,6 +443,33 @@ class PlayerViewModel @Inject constructor(
             Log.w(TAG, "scanFolderFiles: $e")
             listOf(current)
         }
+    }
+
+    /**
+     * Natural (numeric-aware) comparator.
+     * "2.mkv" < "10.mkv" < "11.mkv" — unlike plain alphabetical which gives
+     * "10.mkv" < "11.mkv" < "2.mkv".
+     */
+    private fun naturalCompare(a: String, b: String): Int {
+        var ia = 0; var ib = 0
+        while (ia < a.length && ib < b.length) {
+            val ca = a[ia]; val cb = b[ib]
+            if (ca.isDigit() && cb.isDigit()) {
+                // Compare numeric segments by value, then by length
+                val na = a.drop(ia).takeWhile { it.isDigit() }
+                val nb = b.drop(ib).takeWhile { it.isDigit() }
+                val diff = na.trimStart('0').ifEmpty { "0" }
+                    .compareTo(nb.trimStart('0').ifEmpty { "0" }, ignoreCase = false)
+                    .let { if (it != 0) it else na.length - nb.length }
+                if (diff != 0) return diff
+                ia += na.length; ib += nb.length
+            } else {
+                val diff = ca.lowercaseChar().compareTo(cb.lowercaseChar())
+                if (diff != 0) return diff
+                ia++; ib++
+            }
+        }
+        return a.length - b.length
     }
 
     private var _pendingSeekMs: Long = 0L
@@ -722,24 +824,13 @@ class PlayerViewModel @Inject constructor(
 
     // ─── Position tracking ────────────────────────────────────────────────────
 
-    private fun startPositionUpdates() {
-        stopPositionUpdates()
-        positionJob = viewModelScope.launch {
-            while (isActive) {
-                val posMs = MPVLib.getTimeMs()
-                val durMs = MPVLib.getDurationMs()
-                _state.update { s ->
-                    s.copy(playbackState = s.playbackState.copy(
-                        currentPosition = posMs,
-                        duration        = durMs,
-                    ))
-                }
-                delay(200L)
-            }
-        }
-    }
-
-    private fun stopPositionUpdates() { positionJob?.cancel(); positionJob = null }
+    // Position is updated via eventProperty(String, Double) callbacks for
+    // "time-pos" and "duration" (MPV_FORMAT_DOUBLE observed properties).
+    // No polling needed — this removes the dual-update instability where
+    // both the poller and the callback updated currentPosition simultaneously,
+    // causing seek-bar jitter and gesture conflicts.
+    private fun startPositionUpdates() { /* driven by mpv property events */ }
+    private fun stopPositionUpdates()  { positionJob?.cancel(); positionJob = null }
 
     private fun scheduleHideControls() {
         hideJob?.cancel()

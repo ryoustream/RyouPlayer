@@ -53,7 +53,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val NETWORK_BUFFER_SIZE = intPreferencesKey("network_buffer_size")
         val CACHE_SIZE = intPreferencesKey("cache_size")
         val CODEC_PREFERENCE = stringPreferencesKey("codec_preference")
-        val DEBUG_INFO = booleanPreferencesKey("debug_info")
+        val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
         // Display
         val IGNORE_NOTCH = booleanPreferencesKey("ignore_notch")
     }
@@ -91,7 +91,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override val networkBufferSize = dataStore.readSafely(Keys.NETWORK_BUFFER_SIZE, 32)
     override val cacheSize = dataStore.readSafely(Keys.CACHE_SIZE, 256)
     override val codecPreference = dataStore.readSafely(Keys.CODEC_PREFERENCE, "AUTO")
-    override val debugInfoEnabled = dataStore.readSafely(Keys.DEBUG_INFO, false)
+    override val showHiddenFiles = dataStore.readSafely(Keys.SHOW_HIDDEN_FILES, false)
     override val ignoreNotch = dataStore.readSafely(Keys.IGNORE_NOTCH, false)
 
     // ─── Setters ──────────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun setNetworkBufferSize(size: Int) = dataStore.set(Keys.NETWORK_BUFFER_SIZE, size)
     override suspend fun setCacheSize(size: Int) = dataStore.set(Keys.CACHE_SIZE, size)
     override suspend fun setCodecPreference(codec: String) = dataStore.set(Keys.CODEC_PREFERENCE, codec)
-    override suspend fun setDebugInfo(enabled: Boolean) = dataStore.set(Keys.DEBUG_INFO, enabled)
+    override suspend fun setShowHiddenFiles(enabled: Boolean) = dataStore.set(Keys.SHOW_HIDDEN_FILES, enabled)
     override suspend fun setIgnoreNotch(enabled: Boolean) = dataStore.set(Keys.IGNORE_NOTCH, enabled)
 
     override suspend fun resetToDefaults() {

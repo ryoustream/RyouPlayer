@@ -15,6 +15,8 @@ import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.view.WindowCompat
@@ -42,13 +44,19 @@ class PlayerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ── 1. Read notch pref SYNCHRONOUSLY (IO call is fast — DataStore cache) ──
-        val ignoreNotch = runBlocking { settingsRepository.ignoreNotch.first() }
+        // ── 1. Display cutout — read user preference ─────────────────────────────
+        //    SHORT_EDGES = extend video behind notch (default on).
+        //    NEVER = keep content away from notch (safe for hole-punch devices).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            lifecycleScope.launch {
+                settingsRepository.ignoreNotch.collect { ignore ->
+                    applyNotchMode(ignore)
+                }
+            }
+            applyNotchMode(true) // default to SHORT_EDGES before pref loads
+        }
 
-        // ── 2. Apply cutout mode BEFORE setContent so the window sees it ────────
-        applyNotchMode(ignoreNotch)
-
-        // ── 3. Edge-to-edge (status + nav bars transparent) ─────────────────────
+        // ── 2. Edge-to-edge (status + nav bars transparent) ─────────────────────
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 

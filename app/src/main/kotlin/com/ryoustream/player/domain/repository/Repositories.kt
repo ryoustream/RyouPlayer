@@ -118,7 +118,7 @@ interface SettingsRepository {
     val networkBufferSize: Flow<Int>
     val cacheSize: Flow<Int>
     val codecPreference: Flow<String>
-    val debugInfoEnabled: Flow<Boolean>
+    val showHiddenFiles: Flow<Boolean>
 
     suspend fun setHardwareDecoding(enabled: Boolean)
     suspend fun setSubtitleEnabled(enabled: Boolean)
@@ -141,7 +141,7 @@ interface SettingsRepository {
     suspend fun setNetworkBufferSize(size: Int)
     suspend fun setCacheSize(size: Int)
     suspend fun setCodecPreference(codec: String)
-    suspend fun setDebugInfo(enabled: Boolean)
+    suspend fun setShowHiddenFiles(enabled: Boolean)
     suspend fun setIgnoreNotch(enabled: Boolean)
     suspend fun resetToDefaults()
 }

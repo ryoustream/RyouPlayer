@@ -18,14 +18,14 @@ plugins {
 val buildDate: String = SimpleDateFormat("yyyyMMdd").format(Date())
 val buildTime: String = SimpleDateFormat("HHmm").format(Date())
 val versionMajor = 1
-val versionMinor = 1
+val versionMinor = 2
 val versionPatch = 0
 
 // Auto-increment from BUILD_NUMBER env (GitHub Actions) or fallback to 1
 val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "1").toIntOrNull() ?: 1
 val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 
-val calculatedVersionCode: Int = versionMajor * 10000 + versionMinor * 100 + buildNumber
+val calculatedVersionCode: Int = versionMajor * 1_000_000 + versionMinor * 10_000 + buildNumber
 val calculatedVersionName: String = "v$versionMajor.$versionMinor.$versionPatch.$buildDate-build$buildNumber"
 
 // ─── Signing Config ───────────────────────────────────────────────────────────

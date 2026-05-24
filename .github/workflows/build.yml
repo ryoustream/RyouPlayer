@@ -257,7 +257,12 @@ jobs:
               -dname "CN=RyouStream,O=RyouStream,C=ID" \
               -noprompt 2>&1
             echo "✅ Generated new PKCS12 keystore ($(stat -c%s app/keystore/release.keystore) bytes)"
-            echo "⚠️  NOTE: update KEYSTORE_BASE64 secret with this keystore for consistent signing"
+            # Print base64 so you can update the KEYSTORE_BASE64 secret for consistent signing
+            echo "⚠️  IMPORTANT: Update your KEYSTORE_BASE64 secret with the value below"
+            echo "--- KEYSTORE_BASE64 START ---"
+            base64 -w 0 app/keystore/release.keystore
+            echo ""
+            echo "--- KEYSTORE_BASE64 END ---"
           fi
 
           # Step 4: convert to PKCS12 if valid but still JKS

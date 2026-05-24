@@ -52,7 +52,7 @@ data class SettingsUiState(
     val networkBuffer: Int = 32,
     val cacheSize: Int = 256,
     val codecPreference: String = "AUTO",
-    val debugInfo: Boolean = false,
+    val showHiddenFiles: Boolean = false,
 )
 
 @HiltViewModel
@@ -108,15 +108,15 @@ class SettingsViewModel @Inject constructor(
                 settingsRepository.amoledMode,
                 settingsRepository.useSystemColor,
                 settingsRepository.animationsEnabled,
-                settingsRepository.debugInfoEnabled,
-            ) { theme, amoled, sysColor, anim, debug ->
+                settingsRepository.showHiddenFiles,
+            ) { theme, amoled, sysColor, anim, hidden ->
                 _uiState.update {
                     it.copy(
                         themeMode = theme,
                         amoledMode = amoled,
                         useSystemColor = sysColor,
                         animationsEnabled = anim,
-                        debugInfo = debug,
+                        showHiddenFiles = hidden,
                     )
                 }
             }.collect()
@@ -141,7 +141,7 @@ class SettingsViewModel @Inject constructor(
     fun setUseSystemColor(v: Boolean) = viewModelScope.launch { settingsRepository.setUseSystemColor(v) }
     fun setAnimations(v: Boolean) = viewModelScope.launch { settingsRepository.setAnimationsEnabled(v) }
     fun setIgnoreNotch(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNotch(v) }
-    fun setDebugInfo(v: Boolean) = viewModelScope.launch { settingsRepository.setDebugInfo(v) }
+    fun setShowHiddenFiles(v: Boolean) = viewModelScope.launch { settingsRepository.setShowHiddenFiles(v) }
     fun resetDefaults() = viewModelScope.launch { settingsRepository.resetToDefaults() }
 }
 
@@ -294,15 +294,24 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setAnimations,
                 )
             }
+            item {
+                SwitchSetting(
+                    icon = Icons.Default.Fullscreen,
+                    title = "Ignore Notch / Display Cutout",
+                    subtitle = "Extend video behind notch and hole-punch cameras",
+                    checked = s.ignoreNotch,
+                    onCheckedChange = viewModel::setIgnoreNotch,
+                )
+            }
             // ── ADVANCED ──────────────────────────────────────────────────────
             item { SectionHeader("Advanced") }
             item {
                 SwitchSetting(
-                    icon = Icons.Default.BugReport,
-                    title = "Debug Info",
-                    subtitle = "Show codec & performance overlay",
-                    checked = s.debugInfo,
-                    onCheckedChange = viewModel::setDebugInfo,
+                    icon = Icons.Default.FolderOpen,
+                    title = "Show Hidden Files",
+                    subtitle = "Include files and folders starting with '.'",
+                    checked = s.showHiddenFiles,
+                    onCheckedChange = viewModel::setShowHiddenFiles,
                 )
             }
             item {

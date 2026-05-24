@@ -315,6 +315,9 @@ fun PlayerScreen(
         }
 
         // ── Bottom Sheets ────────────────────────────────────────────────────
+        if (state.showVideoInfo) {
+            VideoInfoSheet(state = state, onDismiss = viewModel::toggleVideoInfo)
+        }
         if (state.showSubtitlePanel) {
             SubtitlePanel(
                 state      = state,
@@ -537,8 +540,11 @@ private fun PlayerControls(
                         Icon(Icons.Default.Stop, "Stop", tint = Color.White.copy(0.75f))
                     }
                 }
-                // Right: subtitle + audio
+                // Right: info + subtitle + audio
                 Row {
+                    IconButton(onClick = viewModel::toggleVideoInfo) {
+                        Icon(Icons.Default.Info, "Video Info", tint = Color.White.copy(0.85f))
+                    }
                     IconButton(onClick = viewModel::showSubtitlePanel) {
                         Icon(
                             Icons.Default.Subtitles, "Subtitles",
@@ -708,6 +714,75 @@ private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(1f).padding(start = 4.dp),
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Video Info Sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun VideoInfoSheet(state: PlayerUiState, onDismiss: () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress    = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false,
+        ),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+            Surface(
+                modifier        = Modifier
+                    .width(300.dp)
+                    .padding(bottom = 72.dp, end = 8.dp),
+                shape           = RoundedCornerShape(16.dp),
+                tonalElevation  = 8.dp,
+                shadowElevation = 8.dp,
+                color           = MaterialTheme.colorScheme.surface,
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically,
+                    ) {
+                        Text("Video Info", style = MaterialTheme.typography.titleSmall)
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Close, "Close", Modifier.size(18.dp))
+                        }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    if (state.videoInfo.isEmpty()) {
+                        Text(
+                            "Loading…",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    } else {
+                        state.videoInfo.forEach { (label, value) ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    label,
+                                    style    = MaterialTheme.typography.labelSmall,
+                                    color    = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.width(100.dp),
+                                )
+                                Text(
+                                    value,
+                                    style    = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
