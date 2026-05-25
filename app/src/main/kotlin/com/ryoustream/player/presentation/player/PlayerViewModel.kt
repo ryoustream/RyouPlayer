@@ -578,20 +578,20 @@ class PlayerViewModel @Inject constructor(
             MPVLib.MPV_EVENT_END_FILE -> {
                 stopPositionUpdates()
                 _state.update { it.copy(isBuffering = false) }
-                // Only save position and auto-next if this is a NATURAL end,
-                // not when our own loadFile call replaces the file (_intentionalLoad).
+                // Skip auto-next when WE triggered the file change (_intentionalLoad).
+                // MPV_EVENT_END_FILE fires for BOTH natural end AND file-replace.
                 if (_intentionalLoad) {
                     _intentionalLoad = false
-                    return@when
-                }
-                savePosition()
-                val s = _state.value
-                if (s.autoNext && s.playbackState.repeatMode != RepeatMode.ONE) {
-                    val nextIdx = _folderIndex + 1
-                    val wrap    = s.playbackState.repeatMode == RepeatMode.ALL
-                    when {
-                        nextIdx < _folderFiles.size         -> playAtIndex(nextIdx)
-                        wrap && _folderFiles.size > 1       -> playAtIndex(0)
+                } else {
+                    savePosition()
+                    val s = _state.value
+                    if (s.autoNext && s.playbackState.repeatMode != RepeatMode.ONE) {
+                        val nextIdx = _folderIndex + 1
+                        val wrap    = s.playbackState.repeatMode == RepeatMode.ALL
+                        when {
+                            nextIdx < _folderFiles.size   -> playAtIndex(nextIdx)
+                            wrap && _folderFiles.size > 1 -> playAtIndex(0)
+                        }
                     }
                 }
             }
