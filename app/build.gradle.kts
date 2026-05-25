@@ -17,16 +17,24 @@ plugins {
 // ─── Version Helpers ──────────────────────────────────────────────────────────
 val buildDate: String = SimpleDateFormat("yyyyMMdd").format(Date())
 val buildTime: String = SimpleDateFormat("HHmm").format(Date())
-val versionMajor = 1
-val versionMinor = 2
-val versionPatch = 0
+val META_VERSION = 1   // always 1 — identifies RyouPlayer
+val versionMajor = 2   // major release (maps to "2" in v1.2.x)
+val versionMinor = 0   // minor/patch
 
-// Auto-increment from BUILD_NUMBER env (GitHub Actions) or fallback to 1
+// BUILD_NUMBER from CI (GitHub Actions run_number), offset so v1.2 starts near 1
 val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "1").toIntOrNull() ?: 1
 val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 
-val calculatedVersionCode: Int = versionMajor * 1_000_000 + versionMinor * 10_000 + buildNumber
-val calculatedVersionName: String = "v$versionMajor.$versionMinor.$versionPatch.$buildDate-build$buildNumber"
+// versionCode format: META×10M + MAJOR×1M + MINOR×1K + BUILD
+// Example: v1.2.0 build 3 → 12_000_003 (displayed as "012000003")
+// v1.2.x always > v1.1.x: 12_000_001 > 11_000_999 ✓
+val calculatedVersionCode: Int =
+    META_VERSION * 10_000_000 + versionMajor * 1_000_000 + versionMinor * 1_000 + buildNumber
+
+// versionName: v{META}.{MAJOR}.{MINOR}-{DATE}b{BUILD:03d}
+// Example: v1.2.0-20260524b003
+val calculatedVersionName: String =
+    "v$META_VERSION.$versionMajor.$versionMinor-${buildDate}b${buildNumber.toString().padStart(3, '0')}"
 
 // ─── Signing Config ───────────────────────────────────────────────────────────
 val signingPropertiesFile = rootProject.file("signing.properties")

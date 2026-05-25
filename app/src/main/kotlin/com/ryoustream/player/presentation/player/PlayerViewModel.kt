@@ -12,6 +12,7 @@ import com.ryoustream.player.domain.model.PlaybackState
 import com.ryoustream.player.domain.model.RepeatMode
 import com.ryoustream.player.domain.model.SubtitleStyle
 import com.ryoustream.player.domain.model.AssCue
+import com.ryoustream.player.domain.repository.SettingsRepository
 import com.ryoustream.player.domain.usecase.GetMediaByUriUseCase
 import com.ryoustream.player.domain.usecase.UpdatePlaybackPositionUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -107,6 +108,7 @@ class PlayerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val getMediaByUriUseCase: GetMediaByUriUseCase,
     private val updatePlaybackPositionUseCase: UpdatePlaybackPositionUseCase,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel(), MPVLib.EventObserver {
 
     private val _state = MutableStateFlow(PlayerUiState())
@@ -120,6 +122,12 @@ class PlayerViewModel @Inject constructor(
     // ── Folder navigation ────────────────────────────────────────────────────
     private var _folderFiles: List<Uri> = emptyList()
     private var _folderIndex: Int       = -1
+
+    // Prevents auto-next chain: MPV_EVENT_END_FILE fires when a file is
+    // REPLACED (not just when it ends naturally). Without this flag,
+    // pressing next triggers END_FILE → auto-next → END_FILE → auto-next...
+    // until the last episode. Set true before loadFile, cleared on FILE_LOADED.
+    private var _intentionalLoad: Boolean = false
 
     // ─── Init ─────────────────────────────────────────────────────────────────
 
@@ -274,23 +282,26 @@ class PlayerViewModel @Inject constructor(
             else      -> uri.toString()
         }
 
+        _intentionalLoad = true   // guard against END_FILE chain reaction
         MPVLib.loadFile(path, startMs)
         showControlsTemporarily()
         startPositionUpdates()
     }
 
-    /** Query actual filename from MediaStore / filesystem — never expose raw media IDs. */
+    /** Query actual filename — never expose raw media IDs as titles.
+     *  OpenableColumns.DISPLAY_NAME works for MediaStore, SAF, and Downloads URIs. */
     private suspend fun resolveDisplayName(uri: Uri): String? = withContext(Dispatchers.IO) {
         try {
             when (uri.scheme) {
                 "file" -> java.io.File(uri.path ?: return@withContext null).name
                 "content" -> {
-                    val cols = arrayOf(
-                        MediaStore.Video.Media.DISPLAY_NAME,
-                        MediaStore.MediaColumns.DISPLAY_NAME,
-                    )
-                    context.contentResolver.query(uri, cols, null, null, null)
-                        ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                    // OpenableColumns.DISPLAY_NAME is the universal column — works for
+                    // content:// from Files app, Downloads, Gallery, SAF document picker.
+                    context.contentResolver.query(
+                        uri,
+                        arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                        null, null, null,
+                    )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
                 }
                 else -> null
             }
@@ -390,7 +401,8 @@ class PlayerViewModel @Inject constructor(
     /** Scan the parent folder (MediaStore or filesystem) for video siblings.
      *  Uses natural (numeric-aware) sort so "2.mkv" comes before "10.mkv". */
     private suspend fun scanFolderFiles(current: Uri): List<Uri> = withContext(Dispatchers.IO) {
-        val showHidden = _state.value.showHiddenFiles
+        // Read pref fresh from repository each scan so Settings changes take effect immediately
+        val showHidden = runCatching { settingsRepository.showHiddenFiles.first() }.getOrDefault(false)
         try {
             when (current.scheme) {
                 "content" -> {
@@ -547,10 +559,9 @@ class PlayerViewModel @Inject constructor(
     override fun event(eventId: Int) {
         when (eventId) {
             MPVLib.MPV_EVENT_FILE_LOADED -> {
+                _intentionalLoad = false  // new file fully loaded — END_FILE hereafter = natural end
                 _state.update { it.copy(
                     isBuffering = false,
-                    // Ensure UI shows Pause button immediately — don't wait for the
-                    // "pause" property callback which can race with isInitialized flag.
                     playbackState = it.playbackState.copy(isPlaying = true, isPaused = false),
                 )}
                 if (_pendingSeekMs > 0L) {
@@ -567,8 +578,13 @@ class PlayerViewModel @Inject constructor(
             MPVLib.MPV_EVENT_END_FILE -> {
                 stopPositionUpdates()
                 _state.update { it.copy(isBuffering = false) }
+                // Only save position and auto-next if this is a NATURAL end,
+                // not when our own loadFile call replaces the file (_intentionalLoad).
+                if (_intentionalLoad) {
+                    _intentionalLoad = false
+                    return@when
+                }
                 savePosition()
-                // Auto-next: play next sibling file when video ends
                 val s = _state.value
                 if (s.autoNext && s.playbackState.repeatMode != RepeatMode.ONE) {
                     val nextIdx = _folderIndex + 1
