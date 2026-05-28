@@ -325,7 +325,7 @@ fun SettingsScreen(
                 SwitchSetting(
                     icon = Icons.Default.VisibilityOff,
                     title = "Ignore .nomedia",
-                    subtitle = "Show videos in folders that contain a .nomedia file",
+                    subtitle = "Mark intent to show .nomedia folders (Android limits MediaStore access; files must be re-indexed manually)",
                     checked = s.ignoreNomedia,
                     onCheckedChange = viewModel::setIgnoreNomedia,
                 )

@@ -79,35 +79,14 @@ class MediaStoreDataSource @Inject constructor(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             }
 
-            // On API 30+, use a Bundle query with QUERY_ARG_SQL_SORT_ORDER.
-            // When ignoreNomedia=true we add the "android:query-arg-match-media-type" extras
-            // that instruct MediaStore to include files from .nomedia-marked folders.
-            val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && ignoreNomedia) {
-                val queryArgs = android.os.Bundle().apply {
-                    putInt(ContentResolver.QUERY_ARG_MATCH_PENDING, ContentResolver.QUERY_ARG_MATCH_EXCLUDE)
-                    putInt(ContentResolver.QUERY_ARG_MATCH_TRASHED, ContentResolver.QUERY_ARG_MATCH_EXCLUDE)
-                    // KEY: include files whose folder has .nomedia
-                    putInt(ContentResolver.QUERY_ARG_MATCH_FAVORITE, ContentResolver.QUERY_ARG_MATCH_INCLUDE)
-                    putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf(
-                        when (sortOrder) {
-                            MediaSortOrder.NAME_ASC, MediaSortOrder.NAME_DESC -> MediaStore.Video.Media.DISPLAY_NAME
-                            MediaSortOrder.DATE_ADDED_DESC, MediaSortOrder.DATE_ADDED_ASC -> MediaStore.Video.Media.DATE_ADDED
-                            MediaSortOrder.SIZE_DESC, MediaSortOrder.SIZE_ASC -> MediaStore.Video.Media.SIZE
-                            MediaSortOrder.DURATION_DESC, MediaSortOrder.DURATION_ASC -> MediaStore.Video.Media.DURATION
-                            else -> MediaStore.Video.Media.DATE_ADDED
-                        }
-                    ))
-                    putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, when (sortOrder) {
-                        MediaSortOrder.NAME_ASC, MediaSortOrder.DATE_ADDED_ASC,
-                        MediaSortOrder.SIZE_ASC, MediaSortOrder.DURATION_ASC ->
-                            ContentResolver.QUERY_SORT_DIRECTION_ASCENDING
-                        else -> ContentResolver.QUERY_SORT_DIRECTION_DESCENDING
-                    })
-                }
-                contentResolver.query(collection, projection, queryArgs, null)
-            } else {
-                contentResolver.query(collection, projection, null, null, orderByClause)
-            }
+            // NOTE: Android MediaStore enforces .nomedia exclusion at the OS level —
+            // there is no public API to bypass it from within a regular app.
+            // The `ignoreNomedia` flag is stored as a user preference but cannot
+            // affect MediaStore results. Files in .nomedia folders are simply absent
+            // from the MediaStore index regardless of query parameters.
+            // The toggle is kept in the UI to signal intent; a future implementation
+            // could supplement with a direct filesystem scan for those folders.
+            val cursor = contentResolver.query(collection, projection, null, null, orderByClause)
 
             cursor?.use { c ->
                 val idCol = c.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
@@ -182,20 +161,10 @@ class MediaStoreDataSource @Inject constructor(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         }
 
-        val folderCursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && ignoreNomedia) {
-            val args = android.os.Bundle().apply {
-                putInt(ContentResolver.QUERY_ARG_MATCH_PENDING, ContentResolver.QUERY_ARG_MATCH_EXCLUDE)
-                putInt(ContentResolver.QUERY_ARG_MATCH_TRASHED, ContentResolver.QUERY_ARG_MATCH_EXCLUDE)
-                putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS,
-                    arrayOf(MediaStore.Video.Media.BUCKET_DISPLAY_NAME))
-                putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION,
-                    ContentResolver.QUERY_SORT_DIRECTION_ASCENDING)
-            }
-            contentResolver.query(collection, projection, args, null)
-        } else {
-            contentResolver.query(collection, projection, null, null,
-                "${MediaStore.Video.Media.BUCKET_DISPLAY_NAME} ASC")
-        }
+        val folderCursor = contentResolver.query(
+            collection, projection, null, null,
+            "${MediaStore.Video.Media.BUCKET_DISPLAY_NAME} ASC"
+        )
 
         folderCursor?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
