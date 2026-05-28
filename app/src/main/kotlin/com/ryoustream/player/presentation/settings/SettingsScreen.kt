@@ -53,6 +53,7 @@ data class SettingsUiState(
     val cacheSize: Int = 256,
     val codecPreference: String = "AUTO",
     val showHiddenFiles: Boolean = false,
+    val ignoreNomedia: Boolean = true,
 )
 
 @HiltViewModel
@@ -126,6 +127,11 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(ignoreNotch = v) }
             }
         }
+        viewModelScope.launch {
+            settingsRepository.ignoreNomedia.collect { v ->
+                _uiState.update { it.copy(ignoreNomedia = v) }
+            }
+        }
     }
 
     fun setHardwareDecoding(v: Boolean) = viewModelScope.launch { settingsRepository.setHardwareDecoding(v) }
@@ -142,6 +148,7 @@ class SettingsViewModel @Inject constructor(
     fun setAnimations(v: Boolean) = viewModelScope.launch { settingsRepository.setAnimationsEnabled(v) }
     fun setIgnoreNotch(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNotch(v) }
     fun setShowHiddenFiles(v: Boolean) = viewModelScope.launch { settingsRepository.setShowHiddenFiles(v) }
+    fun setIgnoreNomedia(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNomedia(v) }
     fun resetDefaults() = viewModelScope.launch { settingsRepository.resetToDefaults() }
 }
 
@@ -312,6 +319,15 @@ fun SettingsScreen(
                     subtitle = "Include files and folders starting with '.'",
                     checked = s.showHiddenFiles,
                     onCheckedChange = viewModel::setShowHiddenFiles,
+                )
+            }
+            item {
+                SwitchSetting(
+                    icon = Icons.Default.VisibilityOff,
+                    title = "Ignore .nomedia",
+                    subtitle = "Show videos in folders that contain a .nomedia file",
+                    checked = s.ignoreNomedia,
+                    onCheckedChange = viewModel::setIgnoreNomedia,
                 )
             }
             item {

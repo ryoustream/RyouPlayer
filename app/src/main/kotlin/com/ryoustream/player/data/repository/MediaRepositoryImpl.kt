@@ -11,9 +11,11 @@ import com.ryoustream.player.domain.model.MediaSortOrder
 import com.ryoustream.player.domain.model.NetworkStream
 import com.ryoustream.player.domain.model.Playlist
 import com.ryoustream.player.domain.repository.MediaRepository
+import com.ryoustream.player.domain.repository.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -26,10 +28,15 @@ class MediaRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val mediaStoreDataSource: MediaStoreDataSource,
     private val mediaPlaybackStateDao: MediaPlaybackStateDao,
+    private val settingsRepository: SettingsRepository,
 ) : MediaRepository {
 
+    private suspend fun ignoreNomedia(): Boolean =
+        runCatching { settingsRepository.ignoreNomedia.first() }.getOrDefault(true)
+
     override fun getAllVideos(sortOrder: MediaSortOrder): Flow<List<MediaItem>> = flow {
-        val videos = mediaStoreDataSource.getAllVideos(sortOrder)
+        val ignoreNomedia = ignoreNomedia()
+        val videos = mediaStoreDataSource.getAllVideos(sortOrder, ignoreNomedia)
         val enriched = videos.map { item ->
             val state = mediaPlaybackStateDao.getById(item.id)
             item.copy(
@@ -43,17 +50,17 @@ class MediaRepositoryImpl @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     override fun getVideosByFolder(folderId: Long, sortOrder: MediaSortOrder): Flow<List<MediaItem>> = flow {
-        val all = mediaStoreDataSource.getAllVideos(sortOrder)
+        val all = mediaStoreDataSource.getAllVideos(sortOrder, ignoreNomedia())
         emit(all.filter { it.folderId == folderId })
     }.flowOn(Dispatchers.IO)
 
     override fun getAllFolders(): Flow<List<MediaFolder>> = flow {
-        emit(mediaStoreDataSource.getAllFolders())
+        emit(mediaStoreDataSource.getAllFolders(ignoreNomedia()))
     }.flowOn(Dispatchers.IO)
 
     override fun getRecentlyPlayed(limit: Int): Flow<List<MediaItem>> =
         mediaPlaybackStateDao.getRecentlyPlayed(limit).map { states ->
-            val allVideos = mediaStoreDataSource.getAllVideos()
+            val allVideos = mediaStoreDataSource.getAllVideos(ignoreNomedia = ignoreNomedia())
             val videoMap = allVideos.associateBy { it.id }
             states.mapNotNull { state ->
                 videoMap[state.mediaId]?.copy(
@@ -67,7 +74,7 @@ class MediaRepositoryImpl @Inject constructor(
 
     override fun getFavorites(): Flow<List<MediaItem>> =
         mediaPlaybackStateDao.getFavorites().map { states ->
-            val allVideos = mediaStoreDataSource.getAllVideos()
+            val allVideos = mediaStoreDataSource.getAllVideos(ignoreNomedia = ignoreNomedia())
             val videoMap = allVideos.associateBy { it.id }
             states.mapNotNull { state ->
                 videoMap[state.mediaId]?.copy(
@@ -84,12 +91,11 @@ class MediaRepositoryImpl @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     override suspend fun getMediaById(id: Long): MediaItem? = withContext(Dispatchers.IO) {
-        mediaStoreDataSource.getAllVideos().find { it.id == id }
+        mediaStoreDataSource.getAllVideos(ignoreNomedia = ignoreNomedia()).find { it.id == id }
     }
 
     override suspend fun getMediaByUri(uri: Uri): MediaItem? = withContext(Dispatchers.IO) {
-        // Try to find by URI in MediaStore
-        val all = mediaStoreDataSource.getAllVideos()
+        val all = mediaStoreDataSource.getAllVideos(ignoreNomedia = ignoreNomedia())
         all.find { it.uri == uri } ?: run {
             // Create a minimal MediaItem for URIs not in MediaStore (e.g. network, SAF)
             MediaItem(
@@ -158,6 +164,6 @@ class MediaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getMediaCount(): Int = withContext(Dispatchers.IO) {
-        mediaStoreDataSource.getAllVideos().size
+        mediaStoreDataSource.getAllVideos(ignoreNomedia = ignoreNomedia()).size
     }
 }

@@ -790,55 +790,109 @@ private fun VideoInfoSheet(state: PlayerUiState, onDismiss: () -> Unit) {
 // Audio Panel
 // ─────────────────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AudioPanel(
     state:     PlayerUiState,
     viewModel: PlayerViewModel,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(
+    // Compact floating popup — mirrors SubtitlePanel layout, anchored to bottom-end.
+    Dialog(
         onDismissRequest = onDismiss,
-        containerColor   = MaterialTheme.colorScheme.surface,
+        properties = DialogProperties(
+            dismissOnBackPress    = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false,
+        ),
     ) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically,
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+            Surface(
+                modifier        = Modifier
+                    .width(280.dp)
+                    .padding(bottom = 72.dp, end = 8.dp),
+                shape           = RoundedCornerShape(16.dp),
+                tonalElevation  = 8.dp,
+                shadowElevation = 8.dp,
+                color           = MaterialTheme.colorScheme.surface,
             ) {
-                Text("Audio Track", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onDismiss) { Text("Done") }
-            }
-            HorizontalDivider()
+                Column(Modifier.padding(8.dp)) {
 
-            if (state.audioTracks.isEmpty()) {
-                Text(
-                    "No audio tracks detected",
-                    style    = MaterialTheme.typography.bodyMedium,
-                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp),
-                )
-            } else {
-                state.audioTracks.forEach { track ->
-                    ListItem(
-                        headlineContent   = { Text(track.label) },
-                        supportingContent = {
-                            if (track.language.isNotBlank())
-                                Text(track.language, style = MaterialTheme.typography.labelSmall)
-                        },
-                        leadingContent = {
-                            RadioButton(
-                                // FIX: compare mpvId
-                                selected = state.selectedAudioTrack == track.mpvId,
-                                onClick  = { viewModel.selectAudioTrack(track) },
-                            )
-                        },
-                        modifier = Modifier.clickable { viewModel.selectAudioTrack(track) },
-                    )
+                    // ── Header ────────────────────────────────────────────────
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically,
+                    ) {
+                        Text("Audio Track", style = MaterialTheme.typography.titleSmall)
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Close, "Close", Modifier.size(18.dp))
+                        }
+                    }
+
+                    // ── Audio delay strip ─────────────────────────────────────
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.setAudioDelay(state.audioDelay - 500L) },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(Icons.Default.Remove, null, Modifier.size(14.dp))
+                        }
+                        Text(
+                            "Delay ${state.audioDelay}ms",
+                            style    = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
+                        )
+                        IconButton(
+                            onClick = { viewModel.setAudioDelay(state.audioDelay + 500L) },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(Icons.Default.Add, null, Modifier.size(14.dp))
+                        }
+                        if (state.audioDelay != 0L) {
+                            TextButton(
+                                onClick  = { viewModel.setAudioDelay(0L) },
+                                modifier = Modifier.height(28.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp),
+                            ) { Text("Reset", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
+
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+                    // ── Track list (scrollable) ───────────────────────────────
+                    if (state.audioTracks.isEmpty()) {
+                        Text(
+                            "No audio tracks detected",
+                            style    = MaterialTheme.typography.bodySmall,
+                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        )
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 240.dp)) {
+                            if (state.audioTracks.isNotEmpty()) {
+                                item {
+                                    Text(
+                                        "Tracks",
+                                        style    = MaterialTheme.typography.labelSmall,
+                                        color    = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 2.dp),
+                                    )
+                                }
+                            }
+                            items(state.audioTracks) { track ->
+                                TrackRow(
+                                    label    = track.label,
+                                    selected = state.selectedAudioTrack == track.mpvId,
+                                    onClick  = { viewModel.selectAudioTrack(track); onDismiss() },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

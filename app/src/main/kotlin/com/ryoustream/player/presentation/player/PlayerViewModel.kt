@@ -80,6 +80,7 @@ data class PlayerUiState(
     // Audio
     val audioTracks: List<TrackInfo>         = emptyList(),
     val selectedAudioTrack: Int              = 1,     // mpvId
+    val audioDelay: Long                     = 0L,
     // Video
     val videoTracks: List<TrackInfo>         = emptyList(),
     // Panels
@@ -354,12 +355,21 @@ class PlayerViewModel @Inject constructor(
 
     private suspend fun fetchVideoInfo() {
         if (!MPVLib.isInitialized.get()) return
+        // Resolve current URI for proper filename — mpv's "filename" property returns
+        // the raw numeric media ID (e.g. "11038492") for content:// MediaStore URIs.
+        val currentUri = _folderFiles.getOrNull(_folderIndex)
+            ?: _state.value.playbackState.mediaItem?.uri
         val info = buildMap<String, String> {
             fun mpvStr(prop: String) = runCatching {
                 MPVLib.getPropertyString(prop)
             }.getOrNull()?.takeIf { it.isNotBlank() }
 
-            mpvStr("filename")?.let { put("File", it) }
+            // Use resolved display name (works for MediaStore, SAF, file://)
+            // Fall back to mpv filename/no-ext only if URI resolution fails.
+            val resolvedName = currentUri?.let { resolveDisplayName(it) }
+                ?: mpvStr("filename/no-ext")
+                ?: mpvStr("filename")
+            resolvedName?.let { put("File", it) }
             mpvStr("path")?.let { put("Path", it) }
 
             val w = mpvStr("video-params/w"); val h = mpvStr("video-params/h")
@@ -713,6 +723,12 @@ class PlayerViewModel @Inject constructor(
         if (MPVLib.isInitialized.get())
             MPVLib.setPropertyDouble("sub-delay", delayMs / 1000.0)
         _state.update { it.copy(subtitleDelay = delayMs) }
+    }
+
+    fun setAudioDelay(delayMs: Long) {
+        if (MPVLib.isInitialized.get())
+            MPVLib.setPropertyDouble("audio-delay", delayMs / 1000.0)
+        _state.update { it.copy(audioDelay = delayMs) }
     }
 
     fun setSubtitleStyle(style: SubtitleStyle) {

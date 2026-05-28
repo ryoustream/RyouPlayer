@@ -54,6 +54,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val CACHE_SIZE = intPreferencesKey("cache_size")
         val CODEC_PREFERENCE = stringPreferencesKey("codec_preference")
         val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
+        val IGNORE_NOMEDIA = booleanPreferencesKey("ignore_nomedia")
         // Display
         val IGNORE_NOTCH = booleanPreferencesKey("ignore_notch")
     }
@@ -92,6 +93,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override val cacheSize = dataStore.readSafely(Keys.CACHE_SIZE, 256)
     override val codecPreference = dataStore.readSafely(Keys.CODEC_PREFERENCE, "AUTO")
     override val showHiddenFiles = dataStore.readSafely(Keys.SHOW_HIDDEN_FILES, false)
+    override val ignoreNomedia = dataStore.readSafely(Keys.IGNORE_NOMEDIA, true)
     override val ignoreNotch = dataStore.readSafely(Keys.IGNORE_NOTCH, false)
 
     // ─── Setters ──────────────────────────────────────────────────────────────
@@ -117,6 +119,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun setCacheSize(size: Int) = dataStore.set(Keys.CACHE_SIZE, size)
     override suspend fun setCodecPreference(codec: String) = dataStore.set(Keys.CODEC_PREFERENCE, codec)
     override suspend fun setShowHiddenFiles(enabled: Boolean) = dataStore.set(Keys.SHOW_HIDDEN_FILES, enabled)
+    override suspend fun setIgnoreNomedia(enabled: Boolean) = dataStore.set(Keys.IGNORE_NOMEDIA, enabled)
     override suspend fun setIgnoreNotch(enabled: Boolean) = dataStore.set(Keys.IGNORE_NOTCH, enabled)
 
     override suspend fun resetToDefaults() {

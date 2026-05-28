@@ -119,6 +119,7 @@ interface SettingsRepository {
     val cacheSize: Flow<Int>
     val codecPreference: Flow<String>
     val showHiddenFiles: Flow<Boolean>
+    val ignoreNomedia: Flow<Boolean>
 
     suspend fun setHardwareDecoding(enabled: Boolean)
     suspend fun setSubtitleEnabled(enabled: Boolean)
@@ -142,6 +143,7 @@ interface SettingsRepository {
     suspend fun setCacheSize(size: Int)
     suspend fun setCodecPreference(codec: String)
     suspend fun setShowHiddenFiles(enabled: Boolean)
+    suspend fun setIgnoreNomedia(enabled: Boolean)
     suspend fun setIgnoreNotch(enabled: Boolean)
     suspend fun resetToDefaults()
 }

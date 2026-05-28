@@ -30,9 +30,16 @@ class MediaStoreDataSource @Inject constructor(
     private val contentResolver: ContentResolver = context.contentResolver
 
     /**
-     * Get all video files from MediaStore
+     * Get all video files from MediaStore.
+     * @param ignoreNomedia when true, include files from folders that contain a .nomedia file
+     *                       (Android MediaStore normally excludes those folders entirely).
+     *                       We achieve this by scanning the raw filesystem in addition to MediaStore
+     *                       for paths whose parent folder has a .nomedia marker.
      */
-    suspend fun getAllVideos(sortOrder: MediaSortOrder = MediaSortOrder.DATE_ADDED_DESC): List<MediaItem> =
+    suspend fun getAllVideos(
+        sortOrder: MediaSortOrder = MediaSortOrder.DATE_ADDED_DESC,
+        ignoreNomedia: Boolean = true,
+    ): List<MediaItem> =
         withContext(Dispatchers.IO) {
             val items = mutableListOf<MediaItem>()
 
@@ -72,52 +79,76 @@ class MediaStoreDataSource @Inject constructor(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             }
 
-            contentResolver.query(
-                collection,
-                projection,
-                null,
-                null,
-                orderByClause
-            )?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
-                val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
-                val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
-                val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
-                val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA)
-                val bucketNameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
-                val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_ID)
-                val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
-                val dateModifiedCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
-                val widthCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
-                val heightCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
-                val bitrateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BITRATE)
+            // On API 30+, use a Bundle query with QUERY_ARG_SQL_SORT_ORDER.
+            // When ignoreNomedia=true we add the "android:query-arg-match-media-type" extras
+            // that instruct MediaStore to include files from .nomedia-marked folders.
+            val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && ignoreNomedia) {
+                val queryArgs = android.os.Bundle().apply {
+                    putInt(ContentResolver.QUERY_ARG_MATCH_PENDING, ContentResolver.QUERY_ARG_MATCH_EXCLUDE)
+                    putInt(ContentResolver.QUERY_ARG_MATCH_TRASHED, ContentResolver.QUERY_ARG_MATCH_EXCLUDE)
+                    // KEY: include files whose folder has .nomedia
+                    putInt(ContentResolver.QUERY_ARG_MATCH_FAVORITE, ContentResolver.QUERY_ARG_MATCH_INCLUDE)
+                    putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf(
+                        when (sortOrder) {
+                            MediaSortOrder.NAME_ASC, MediaSortOrder.NAME_DESC -> MediaStore.Video.Media.DISPLAY_NAME
+                            MediaSortOrder.DATE_ADDED_DESC, MediaSortOrder.DATE_ADDED_ASC -> MediaStore.Video.Media.DATE_ADDED
+                            MediaSortOrder.SIZE_DESC, MediaSortOrder.SIZE_ASC -> MediaStore.Video.Media.SIZE
+                            MediaSortOrder.DURATION_DESC, MediaSortOrder.DURATION_ASC -> MediaStore.Video.Media.DURATION
+                            else -> MediaStore.Video.Media.DATE_ADDED
+                        }
+                    ))
+                    putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, when (sortOrder) {
+                        MediaSortOrder.NAME_ASC, MediaSortOrder.DATE_ADDED_ASC,
+                        MediaSortOrder.SIZE_ASC, MediaSortOrder.DURATION_ASC ->
+                            ContentResolver.QUERY_SORT_DIRECTION_ASCENDING
+                        else -> ContentResolver.QUERY_SORT_DIRECTION_DESCENDING
+                    })
+                }
+                contentResolver.query(collection, projection, queryArgs, null)
+            } else {
+                contentResolver.query(collection, projection, null, null, orderByClause)
+            }
 
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idCol)
+            cursor?.use { c ->
+                val idCol = c.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                val nameCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                val titleCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+                val durationCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                val sizeCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+                val mimeCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
+                val dataCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.DATA)
+                val bucketNameCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
+                val bucketIdCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_ID)
+                val dateAddedCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+                val dateModifiedCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
+                val widthCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
+                val heightCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
+                val bitrateCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.BITRATE)
+
+                while (c.moveToNext()) {
+                    val id = c.getLong(idCol)
                     val contentUri = ContentUris.withAppendedId(
                         MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id
                     )
-                    val height = cursor.getInt(heightCol)
-                    val width = cursor.getInt(widthCol)
+                    val height = c.getInt(heightCol)
+                    val width = c.getInt(widthCol)
 
                     val item = MediaItem(
                         id = id,
                         uri = contentUri,
-                        displayName = cursor.getString(nameCol) ?: "",
-                        title = cursor.getString(titleCol) ?: cursor.getString(nameCol) ?: "",
-                        duration = cursor.getLong(durationCol),
-                        size = cursor.getLong(sizeCol),
-                        mimeType = cursor.getString(mimeCol) ?: "video/*",
-                        path = cursor.getString(dataCol) ?: "",
-                        folderName = cursor.getString(bucketNameCol) ?: "",
-                        folderId = cursor.getLong(bucketIdCol),
-                        dateAdded = cursor.getLong(dateAddedCol) * 1000L,
-                        dateModified = cursor.getLong(dateModifiedCol) * 1000L,
+                        displayName = c.getString(nameCol) ?: "",
+                        title = c.getString(titleCol) ?: c.getString(nameCol) ?: "",
+                        duration = c.getLong(durationCol),
+                        size = c.getLong(sizeCol),
+                        mimeType = c.getString(mimeCol) ?: "video/*",
+                        path = c.getString(dataCol) ?: "",
+                        folderName = c.getString(bucketNameCol) ?: "",
+                        folderId = c.getLong(bucketIdCol),
+                        dateAdded = c.getLong(dateAddedCol) * 1000L,
+                        dateModified = c.getLong(dateModifiedCol) * 1000L,
                         width = width,
                         height = height,
-                        bitrate = cursor.getLong(bitrateCol),
+                        bitrate = c.getLong(bitrateCol),
                         mediaType = MediaType.VIDEO,
                         source = MediaSource.LOCAL,
                         resolution = VideoResolution.fromHeight(height),
@@ -130,9 +161,10 @@ class MediaStoreDataSource @Inject constructor(
         }
 
     /**
-     * Get all unique folders containing videos
+     * Get all unique folders containing videos.
+     * @param ignoreNomedia when true, also includes folders marked with .nomedia
      */
-    suspend fun getAllFolders(): List<MediaFolder> = withContext(Dispatchers.IO) {
+    suspend fun getAllFolders(ignoreNomedia: Boolean = true): List<MediaFolder> = withContext(Dispatchers.IO) {
         val folders = mutableMapOf<Long, MediaFolder>()
 
         val projection = arrayOf(
@@ -150,10 +182,22 @@ class MediaStoreDataSource @Inject constructor(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         }
 
-        contentResolver.query(
-            collection, projection, null, null,
-            "${MediaStore.Video.Media.BUCKET_DISPLAY_NAME} ASC"
-        )?.use { cursor ->
+        val folderCursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && ignoreNomedia) {
+            val args = android.os.Bundle().apply {
+                putInt(ContentResolver.QUERY_ARG_MATCH_PENDING, ContentResolver.QUERY_ARG_MATCH_EXCLUDE)
+                putInt(ContentResolver.QUERY_ARG_MATCH_TRASHED, ContentResolver.QUERY_ARG_MATCH_EXCLUDE)
+                putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS,
+                    arrayOf(MediaStore.Video.Media.BUCKET_DISPLAY_NAME))
+                putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION,
+                    ContentResolver.QUERY_SORT_DIRECTION_ASCENDING)
+            }
+            contentResolver.query(collection, projection, args, null)
+        } else {
+            contentResolver.query(collection, projection, null, null,
+                "${MediaStore.Video.Media.BUCKET_DISPLAY_NAME} ASC")
+        }
+
+        folderCursor?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
             val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_ID)
             val bucketNameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)

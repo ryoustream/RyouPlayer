@@ -19,22 +19,28 @@ val buildDate: String = SimpleDateFormat("yyyyMMdd").format(Date())
 val buildTime: String = SimpleDateFormat("HHmm").format(Date())
 val META_VERSION = 1   // always 1 — identifies RyouPlayer
 val versionMajor = 2   // major release (maps to "2" in v1.2.x)
-val versionMinor = 0   // minor/patch
+val versionMinor = 0   // minor/patch (reset to 0 on major bump; versionName minor ≠ buildNumber)
 
-// BUILD_NUMBER from CI (GitHub Actions run_number), offset so v1.2 starts near 1
-val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "1").toIntOrNull() ?: 1
+// BUILD_NUMBER from CI (GitHub Actions run_number).
+// This is the "minor fix / build" counter (0065 in 01_02_0065).
+val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "65").toIntOrNull() ?: 65
 val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 
-// versionCode format: META×10M + MAJOR×1M + MINOR×1K + BUILD
-// Example: v1.2.0 build 3 → 12_000_003 (displayed as "012000003")
-// v1.2.x always > v1.1.x: 12_000_001 > 11_000_999 ✓
-val calculatedVersionCode: Int =
-    META_VERSION * 10_000_000 + versionMajor * 1_000_000 + versionMinor * 1_000 + buildNumber
+// VERSION_NAME_MINOR is reset to 1 on each Major bump, then incremented per major fix.
+// It does NOT equal buildNumber. Set manually.
+// Example: versionName 1.2.003 → VERSION_NAME_MINOR = 3
+val versionNameMinor: Int = 3
 
-// versionName: v{META}.{MAJOR}.{MINOR}-{DATE}b{BUILD:03d}
-// Example: v1.2.0-20260524b003
+// versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
+// Encoding: 01_02_0065 → 1*1_000_000 + 2*10_000 + 65 = 1_020_065
+// v1.2.x always > v1.1.x: 1_020_065 > 1_010_999 ✓
+val calculatedVersionCode: Int =
+    META_VERSION * 1_000_000 + versionMajor * 10_000 + buildNumber
+
+// versionName: {META}.{MAJOR}.{MINOR:03d}
+// Example: 1.2.003
 val calculatedVersionName: String =
-    "v$META_VERSION.$versionMajor.$versionMinor-${buildDate}b${buildNumber.toString().padStart(3, '0')}"
+    "$META_VERSION.$versionMajor.${versionNameMinor.toString().padStart(3, '0')}"
 
 // ─── Signing Config ───────────────────────────────────────────────────────────
 val signingPropertiesFile = rootProject.file("signing.properties")
