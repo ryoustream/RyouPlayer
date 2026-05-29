@@ -28,8 +28,9 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 // versionNameMinor — bump manually on every feature/fix release.
 // Rule: reset to 1 on versionMajor bump, then increment by 1 per release.
 // History: 001 = initial 1.2, 002 = audio panel, 003 = hidden-file/audio-delay fix,
-//          004 = all-files access + pull-to-refresh + splash icon fix
-val versionNameMinor: Int = 4
+//          004 = all-files access + pull-to-refresh + splash icon fix,
+//          005 = pull-refresh rework + permission lifecycle fix + .nomedia fs-scan + version sync
+val versionNameMinor: Int = 5
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066
@@ -320,4 +321,14 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
+}
+
+// ─── Version helper task ───────────────────────────────────────────────────────
+// Used by CI to read the canonical version name so the APK filename, artifact
+// name, and GitHub release tag all match what's shown inside the app.
+//   Usage: ./gradlew -q :app:printVersionName
+tasks.register("printVersionName") {
+    group       = "versioning"
+    description = "Print the canonical versionName to stdout (used by CI)."
+    doLast { println(calculatedVersionName) }
 }

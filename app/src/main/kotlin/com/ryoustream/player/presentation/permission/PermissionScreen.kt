@@ -24,6 +24,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.accompanist.permissions.*
 import com.ryoustream.player.util.PermissionHelper
 
@@ -49,14 +52,29 @@ import com.ryoustream.player.util.PermissionHelper
 fun PermissionScreen(
     onPermissionsGranted: @Composable () -> Unit,
 ) {
-    val context = LocalContext.current
+    val context      = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // ── All-Files state (API 30+) ────────────────────────────────────────────
     val needsAllFiles = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
-    // Recompose when returning from Settings
     var allFilesGranted by remember {
         mutableStateOf(PermissionHelper.hasAllFilesAccess())
+    }
+
+    // Re-check MANAGE_EXTERNAL_STORAGE whenever the Activity resumes.
+    // This covers the case where the user grants (or revokes) the permission in
+    // Settings and then returns via the system back gesture — the
+    // allFilesLauncher result callback fires only when we launched Settings
+    // ourselves; the lifecycle observer catches all other resume paths.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                allFilesGranted = PermissionHelper.hasAllFilesAccess()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Launcher to re-check after the user returns from the Settings page
@@ -139,7 +157,7 @@ private fun PermissionGate(
     // Prefer the All-Files flow on API 30+; fall back to granular otherwise
     if (needsAllFiles && !allFilesGranted) {
         AllFilesPermissionUI(
-            onGrantAllFiles   = onRequestAllFiles,
+            onGrantAllFiles    = onRequestAllFiles,
             onUseLimitedAccess = onRequestGranular,
         )
     } else {

@@ -49,7 +49,6 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
-
       - name: 📋 Set build metadata
         id: meta
         run: |
@@ -60,12 +59,10 @@ jobs:
           [ $BUILD_NUMBER -lt 1 ] && BUILD_NUMBER=1
           COMMIT_HASH=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date +'%Y%m%d')
-          VERSION_NAME="v1.2.0-${BUILD_DATE}b$(printf '%03d' ${BUILD_NUMBER})"
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
           echo "COMMIT_HASH=${COMMIT_HASH}"   >> $GITHUB_OUTPUT
           echo "BUILD_DATE=${BUILD_DATE}"     >> $GITHUB_OUTPUT
-          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
-          echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
+          echo "📦 Commit: ${COMMIT_HASH} | Build: ${BUILD_NUMBER}"
 
       - name: 🔧 Generate Gradle Wrapper
         run: |
@@ -114,6 +111,20 @@ jobs:
           BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
           COMMIT_HASH:  ${{ steps.meta.outputs.COMMIT_HASH }}
 
+      # ── Read the canonical version name that Gradle baked into the APK ──────
+      # This is the single source of truth for all artifact names and release
+      # tags, so the APK filename / artifact name / About screen all match.
+      - name: 📌 Read canonical version from Gradle
+        id: version
+        run: |
+          VERSION=$(./gradlew -q :app:printVersionName --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx2g")
+          echo "VERSION_NAME=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "📌 Canonical version: v${VERSION}"
+        env:
+          BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
+          COMMIT_HASH:  ${{ steps.meta.outputs.COMMIT_HASH }}
+
       - name: 🔍 Run Lint (non-blocking)
         run: |
           ./gradlew lintDebug \
@@ -128,14 +139,14 @@ jobs:
         run: |
           APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           echo "Found APK: $APK"
-          NEW="RyouPlayer-debug-${{ steps.meta.outputs.VERSION_NAME }}.apk"
+          NEW="RyouPlayer-debug-${{ steps.version.outputs.VERSION_NAME }}.apk"
           cp "$APK" "app/build/outputs/apk/debug/${NEW}"
           echo "✅ Renamed to: ${NEW}"
 
       - name: 📤 Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: RyouPlayer-debug-${{ steps.meta.outputs.VERSION_NAME }}
+          name: RyouPlayer-debug-${{ steps.version.outputs.VERSION_NAME }}
           path: app/build/outputs/apk/debug/RyouPlayer-debug-*.apk
           retention-days: 14
 
@@ -171,7 +182,6 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
-
       - name: 📋 Set build metadata
         id: meta
         run: |
@@ -182,12 +192,10 @@ jobs:
           [ $BUILD_NUMBER -lt 1 ] && BUILD_NUMBER=1
           COMMIT_HASH=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date +'%Y%m%d')
-          VERSION_NAME="v1.2.0-${BUILD_DATE}b$(printf '%03d' ${BUILD_NUMBER})"
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
           echo "COMMIT_HASH=${COMMIT_HASH}"   >> $GITHUB_OUTPUT
           echo "BUILD_DATE=${BUILD_DATE}"     >> $GITHUB_OUTPUT
-          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
-          echo "📦 Version: ${VERSION_NAME} | Commit: ${COMMIT_HASH}"
+          echo "📦 Commit: ${COMMIT_HASH} | Build: ${BUILD_NUMBER}"
 
       - name: 🔧 Generate Gradle Wrapper
         run: |
@@ -252,8 +260,6 @@ jobs:
 
           # Step 3: if invalid or missing, generate a new PKCS12 keystore
           if [ "$VALID" = "false" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
-            # Remove the corrupt file first — keytool -genkey opens existing
-            # keystore before writing, so a corrupt file causes EOFException.
             rm -f app/keystore/release.keystore
             keytool -genkey -v \
               -keystore app/keystore/release.keystore \
@@ -265,7 +271,6 @@ jobs:
               -dname "CN=RyouStream,O=RyouStream,C=ID" \
               -noprompt 2>&1
             echo "✅ Generated new PKCS12 keystore ($(stat -c%s app/keystore/release.keystore) bytes)"
-            # Print base64 so you can update the KEYSTORE_BASE64 secret for consistent signing
             echo "⚠️  IMPORTANT: Update your KEYSTORE_BASE64 secret with the value below"
             echo "--- KEYSTORE_BASE64 START ---"
             base64 -w 0 app/keystore/release.keystore
@@ -310,17 +315,29 @@ jobs:
           KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
 
+      # ── Read the canonical version name that Gradle baked into the APK ──────
+      - name: 📌 Read canonical version from Gradle
+        id: version
+        run: |
+          VERSION=$(./gradlew -q :app:printVersionName --no-daemon \
+            -Dorg.gradle.jvmargs="-Xmx2g")
+          echo "VERSION_NAME=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "📌 Canonical version: v${VERSION}"
+        env:
+          BUILD_NUMBER: ${{ steps.meta.outputs.BUILD_NUMBER }}
+          COMMIT_HASH:  ${{ steps.meta.outputs.COMMIT_HASH }}
+
       - name: 📝 Rename APK
         run: |
           APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
-          NEW="RyouPlayer-release-${{ steps.meta.outputs.VERSION_NAME }}.apk"
+          NEW="RyouPlayer-release-${{ steps.version.outputs.VERSION_NAME }}.apk"
           cp "$APK" "app/build/outputs/apk/release/${NEW}"
           echo "✅ Renamed to: ${NEW}"
 
       - name: 📤 Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: RyouPlayer-release-${{ steps.meta.outputs.VERSION_NAME }}
+          name: RyouPlayer-release-${{ steps.version.outputs.VERSION_NAME }}
           path: app/build/outputs/apk/release/RyouPlayer-release-*.apk
           retention-days: 30
 
@@ -328,14 +345,14 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.VERSION_NAME }}
-          name: "🎬 Ryou Player ${{ steps.meta.outputs.VERSION_NAME }}"
+          tag_name: ${{ steps.version.outputs.VERSION_NAME }}
+          name: "🎬 Ryou Player ${{ steps.version.outputs.VERSION_NAME }}"
           draft: true
           prerelease: false
           generate_release_notes: true
           files: app/build/outputs/apk/release/RyouPlayer-release-*.apk
           body: |
-            ## 🎬 Ryou Player ${{ steps.meta.outputs.VERSION_NAME }}
+            ## 🎬 Ryou Player ${{ steps.version.outputs.VERSION_NAME }}
 
             **Build:** #${{ steps.meta.outputs.BUILD_NUMBER }}
             **Commit:** `${{ steps.meta.outputs.COMMIT_HASH }}`
@@ -343,7 +360,7 @@ jobs:
 
             ### 📱 Requirements
             - Android 12+ (API 31)
-            - ARM64 / x86_64
+            - ARM64
 
             ---
             > 🤖 Auto-generated by GitHub Actions

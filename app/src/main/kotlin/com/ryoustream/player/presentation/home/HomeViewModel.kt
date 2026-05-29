@@ -69,27 +69,60 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private val searchQuery = MutableStateFlow("")
-    private val sortOrder = MutableStateFlow(MediaSortOrder.NAME_ASC) // A-Z default
+    private val sortOrder  = MutableStateFlow(MediaSortOrder.NAME_ASC)
+
+    // ── Refresh trigger ──────────────────────────────────────────────────────
+    // Bumping this value forces the background collectors in loadAllVideos()
+    // and loadFolders() to re-fetch from the repository.  Using a Long
+    // (System.currentTimeMillis) guarantees each bump is a distinct value so
+    // StateFlow actually emits a new item and flatMapLatest fires.
+    private val _refreshKey = MutableStateFlow(0L)
 
     init {
         loadAllVideos()
-        loadRecent()
         loadFolders()
+        loadRecent()
         loadStreams()
         loadPlaylists()
     }
 
+    // ── Background collectors ────────────────────────────────────────────────
+
     private fun loadAllVideos() {
         viewModelScope.launch {
-            searchQuery
-                .debounce(300L)
+            // Combine search query (debounced) AND refresh trigger so that
+            // pull-to-refresh / rescan / sort-change all flow through the same
+            // pipeline without spawning competing coroutines.
+            combine(
+                searchQuery.debounce(300L),
+                _refreshKey,
+            ) { query, _ -> query }
                 .flatMapLatest { query ->
                     if (query.isBlank()) getAllVideosUseCase(sortOrder.value)
                     else searchMediaUseCase(query)
                 }
                 .catch { e -> _uiState.update { it.copy(error = e.message) } }
                 .collect { videos ->
-                    _uiState.update { it.copy(isLoading = false, videos = videos) }
+                    _uiState.update {
+                        it.copy(
+                            isLoading    = false,
+                            isRefreshing = false,   // clear both spinners when data arrives
+                            videos       = videos,
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun loadFolders() {
+        viewModelScope.launch {
+            _refreshKey
+                .flatMapLatest { mediaRepository.getAllFolders() }
+                .catch { }
+                .collect { folders ->
+                    _uiState.update {
+                        it.copy(folders = folders.sortedBy { f -> f.name.lowercase() })
+                    }
                 }
         }
     }
@@ -99,19 +132,6 @@ class HomeViewModel @Inject constructor(
             getRecentlyPlayedUseCase(50)
                 .catch { }
                 .collect { recent -> _uiState.update { it.copy(recentVideos = recent) } }
-        }
-    }
-
-    private fun loadFolders() {
-        viewModelScope.launch {
-            mediaRepository.getAllFolders()
-                .catch { }
-                .collect { folders ->
-                    // Sort A-Z by default
-                    _uiState.update {
-                        it.copy(folders = folders.sortedBy { f -> f.name.lowercase() })
-                    }
-                }
         }
     }
 
@@ -131,7 +151,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    // ── Search ──────────────────────────────────────────────────────────────
+    // ── Search ────────────────────────────────────────────────────────────────
     fun onSearchQueryChange(query: String) {
         searchQuery.value = query
         _uiState.update { it.copy(searchQuery = query) }
@@ -142,11 +162,13 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(searchQuery = "") }
     }
 
-    // ── Sort / View ──────────────────────────────────────────────────────────
+    // ── Sort / View ───────────────────────────────────────────────────────────
     fun onSortOrderChange(order: MediaSortOrder) {
         sortOrder.value = order
         _uiState.update { it.copy(sortOrder = order) }
-        loadAllVideos()
+        // Bump refresh key so the existing loadAllVideos() collector re-fetches
+        // with the new sort order — no competing coroutine needed.
+        _refreshKey.value = System.currentTimeMillis()
     }
 
     fun onTabSelected(tab: HomeTab) {
@@ -159,37 +181,41 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    // ── Favorites ────────────────────────────────────────────────────────────
+    // ── Favorites ─────────────────────────────────────────────────────────────
     fun onToggleFavorite(mediaId: Long) {
         viewModelScope.launch { toggleFavoriteUseCase(mediaId) }
     }
 
-    // ── Rescan ───────────────────────────────────────────────────────────────
+    // ── Rescan ────────────────────────────────────────────────────────────────
     fun onRescanMedia() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             rescanMediaUseCase()
-            loadAllVideos()
-            loadFolders()
-            _uiState.update { it.copy(isLoading = false) }
+            // Bump key — loadAllVideos() / loadFolders() collectors will re-emit
+            // and clear isLoading when data arrives.
+            _refreshKey.value = System.currentTimeMillis()
         }
     }
 
-    /** Pull-to-refresh: silently reload all data without the full loading skeleton. */
+    /**
+     * Pull-to-refresh handler.
+     *
+     * Sets isRefreshing = true, runs a MediaStore rescan, then bumps the
+     * refresh key so the background collectors pick up fresh data.
+     * isRefreshing is cleared in the collect {} block of loadAllVideos() once
+     * the new data actually arrives — not immediately after launching work.
+     */
     fun onRefresh() {
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true) }
             rescanMediaUseCase()
-            loadAllVideos()
-            loadFolders()
-            loadRecent()
-            loadStreams()
-            loadPlaylists()
-            _uiState.update { it.copy(isRefreshing = false) }
+            _refreshKey.value = System.currentTimeMillis()
+            // isRefreshing = false is set inside loadAllVideos()'s collect block
+            // when the new videos emission arrives.
         }
     }
 
-    // ── Stream CRUD ──────────────────────────────────────────────────────────
+    // ── Stream CRUD ───────────────────────────────────────────────────────────
     fun onShowAddStreamDialog() = _uiState.update { it.copy(showAddStreamDialog = true) }
     fun onDismissAddStreamDialog() = _uiState.update {
         it.copy(showAddStreamDialog = false, streamDialogUrl = "", streamDialogName = "")
@@ -205,13 +231,13 @@ class HomeViewModel @Inject constructor(
             streamRepository.addStream(
                 NetworkStream(
                     name = name,
-                    url = url,
+                    url  = url,
                     protocol = when {
-                        url.startsWith("rtsp") -> StreamProtocol.RTSP
-                        url.contains(".m3u8") -> StreamProtocol.HLS
-                        url.contains(".mpd") -> StreamProtocol.DASH
+                        url.startsWith("rtsp")    -> StreamProtocol.RTSP
+                        url.contains(".m3u8")     -> StreamProtocol.HLS
+                        url.contains(".mpd")      -> StreamProtocol.DASH
                         url.startsWith("http://") -> StreamProtocol.HTTP
-                        else -> StreamProtocol.HTTPS
+                        else                      -> StreamProtocol.HTTPS
                     },
                 )
             )
@@ -227,7 +253,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { streamRepository.toggleFavorite(id) }
     }
 
-    // ── Playlist CRUD ────────────────────────────────────────────────────────
+    // ── Playlist CRUD ─────────────────────────────────────────────────────────
     fun onShowCreatePlaylistDialog() = _uiState.update { it.copy(showCreatePlaylistDialog = true) }
     fun onDismissCreatePlaylistDialog() = _uiState.update {
         it.copy(showCreatePlaylistDialog = false, newPlaylistName = "")
