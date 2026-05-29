@@ -135,11 +135,10 @@ fun HomeScreen(
             }
 
             // Pull-to-refresh wraps the entire tab content area.
-            // Disabled during search to avoid accidental refresh.
+            // Swipe is ignored during search by passing a no-op onRefresh.
             PullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
-                onRefresh    = viewModel::onRefresh,
-                enabled      = !searchExpanded,
+                onRefresh    = { if (!searchExpanded) viewModel.onRefresh() },
                 modifier     = Modifier.fillMaxSize(),
             ) {
                 AnimatedContent(
