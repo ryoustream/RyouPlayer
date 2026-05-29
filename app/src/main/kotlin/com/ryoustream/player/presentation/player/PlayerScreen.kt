@@ -207,16 +207,20 @@ fun PlayerScreen(
     ) {
 
         // ── MPV Video Surface ────────────────────────────────────────────────
-        // MPVView is a SurfaceView that forwards the Surface to libmpv.
-        // mpv renders video AND subtitles (via libass) directly onto this surface.
-        // IMPORTANT: only create MPVView AFTER MPVLib.init() has completed (mpvReady=true).
-        // surfaceCreated fires immediately once the view is attached; calling
-        // attachSurface() before init() is a guaranteed native crash.
+        // MPVView is a SurfaceView that wires its Surface to libmpv.
+        // CRITICAL: The key must NOT change between file loads — only change
+        // when mpv is fully destroyed and re-initialized. Recreating the
+        // SurfaceView while playing triggers surfaceDestroyed → detachSurface
+        // → black screen until the next frame, which can take 500ms+.
+        // We use a stable key so AndroidView is reused across file changes.
         if (state.mpvReady) {
-            AndroidView(
-                factory = { ctx -> MPVView(ctx) },
-                modifier = Modifier.fillMaxSize(),
-            )
+            key("mpv_surface") {
+                AndroidView(
+                    factory = { ctx -> MPVView(ctx) },
+                    modifier = Modifier.fillMaxSize(),
+                    update = { /* surface managed by MPVView callbacks — no update needed */ },
+                )
+            }
         }
 
         // ── mpv missing overlay ──────────────────────────────────────────────

@@ -237,67 +237,117 @@ jobs:
         run: |
           mkdir -p app/keystore
 
-          # Step 1: decode the stored keystore (if provided)
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' \
-              | base64 --decode > app/keystore/release.keystore 2>/dev/null
-            echo "Decoded: $(stat -c%s app/keystore/release.keystore) bytes"
-          fi
-
-          # Step 2: validate — keytool -list is the ground-truth check
+          ALIAS="${KEY_ALIAS:-ryoustream}"
           VALID=false
-          if [ -n "$KEYSTORE_PASSWORD" ] && [ -f app/keystore/release.keystore ]; then
-            if keytool -list \
-                  -keystore app/keystore/release.keystore \
-                  -storepass "$KEYSTORE_PASSWORD" \
-                  -noprompt > /dev/null 2>&1; then
-              VALID=true
-              echo "✅ Existing keystore is valid"
-            else
-              echo "⚠️  Existing keystore is corrupt/unreadable — will generate a fresh one"
+
+          # ── Step 1: decode the base64 keystore ──────────────────────────────
+          # Root cause of "corrupt" keystore: GitHub Secrets may inject trailing
+          # newlines, and multi-line base64 (with \n every 76 chars) is also common.
+          # Solution: strip ALL whitespace before decoding.
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "🔑 Decoding keystore from KEYSTORE_BASE64..."
+            # Python is more reliable than tr+base64 for stripping all whitespace
+            python3 -c "
+          import base64, os, sys
+          raw = os.environ['KEYSTORE_BASE64']
+          # Strip ALL whitespace characters (spaces, newlines, carriage returns, tabs)
+          cleaned = ''.join(raw.split())
+          try:
+              data = base64.b64decode(cleaned)
+              sys.stdout.buffer.write(data)
+          except Exception as e:
+              sys.stderr.write(f'base64 decode failed: {e}\n')
+              sys.exit(1)
+          " > app/keystore/release.keystore
+            BYTES=$(stat -c%s app/keystore/release.keystore 2>/dev/null || echo 0)
+            echo "Decoded keystore: ${BYTES} bytes"
+            if [ "$BYTES" -lt 100 ]; then
+              echo "❌ Decoded file too small (${BYTES} bytes) — KEYSTORE_BASE64 may be corrupt"
+              rm -f app/keystore/release.keystore
             fi
           fi
 
-          # Step 3: if invalid or missing, generate a new PKCS12 keystore
+          # ── Step 2: validate with keytool ────────────────────────────────────
+          if [ -f app/keystore/release.keystore ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "🔍 Validating keystore with keytool..."
+            if keytool -list \
+                  -keystore app/keystore/release.keystore \
+                  -storepass "$KEYSTORE_PASSWORD" \
+                  -noprompt 2>&1; then
+              VALID=true
+              echo "✅ Keystore is valid"
+            else
+              echo "❌ keytool rejected keystore — will auto-generate a new one"
+              echo "   Possible causes:"
+              echo "   1. KEYSTORE_PASSWORD secret is wrong"
+              echo "   2. KEYSTORE_BASE64 was corrupted during copy-paste"
+              echo "   3. The keystore file is JKS but storeType=PKCS12 (or vice versa)"
+              rm -f app/keystore/release.keystore
+            fi
+          fi
+
+          # ── Step 3: auto-generate if still not valid ─────────────────────────
           if [ "$VALID" = "false" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "🔧 Auto-generating new PKCS12 keystore..."
             rm -f app/keystore/release.keystore
             keytool -genkey -v \
               -keystore app/keystore/release.keystore \
               -storetype PKCS12 \
-              -alias     "${KEY_ALIAS:-ryoustream}" \
+              -alias     "$ALIAS" \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass "$KEYSTORE_PASSWORD" \
               -keypass   "$KEY_PASSWORD" \
               -dname "CN=RyouStream,O=RyouStream,C=ID" \
-              -noprompt 2>&1
-            echo "✅ Generated new PKCS12 keystore ($(stat -c%s app/keystore/release.keystore) bytes)"
-            echo "⚠️  IMPORTANT: Update your KEYSTORE_BASE64 secret with the value below"
-            echo "--- KEYSTORE_BASE64 START ---"
+              -noprompt
+            BYTES=$(stat -c%s app/keystore/release.keystore 2>/dev/null || echo 0)
+            echo "✅ Generated new keystore (${BYTES} bytes)"
+            echo ""
+            echo "════════════════════════════════════════════════"
+            echo "⚠️  ACTION REQUIRED: Update KEYSTORE_BASE64 secret"
+            echo "════════════════════════════════════════════════"
+            echo "Run this locally or copy the value below to"
+            echo "GitHub → Settings → Secrets → KEYSTORE_BASE64:"
+            echo ""
             base64 -w 0 app/keystore/release.keystore
             echo ""
-            echo "--- KEYSTORE_BASE64 END ---"
+            echo "════════════════════════════════════════════════"
+            VALID=true
           fi
 
-          # Step 4: convert to PKCS12 if valid but still JKS
-          if [ "$VALID" = "true" ]; then
-            if keytool -importkeystore \
+          # ── Step 4: detect actual store type ─────────────────────────────────
+          # Detect whether it's actually PKCS12 or JKS so storeType is correct.
+          STORE_TYPE="PKCS12"
+          if file app/keystore/release.keystore 2>/dev/null | grep -qi "java keystore"; then
+            STORE_TYPE="JKS"
+            echo "ℹ️  Detected JKS format — converting to PKCS12 for compatibility..."
+            keytool -importkeystore \
                   -srckeystore  app/keystore/release.keystore \
                   -srcstorepass "$KEYSTORE_PASSWORD" \
+                  -srcalias     "$ALIAS" \
                   -destkeystore app/keystore/release.p12 \
                   -deststoretype PKCS12 \
                   -deststorepass "$KEYSTORE_PASSWORD" \
-                  -noprompt > /dev/null 2>&1; then
-              mv app/keystore/release.p12 app/keystore/release.keystore
-              echo "✅ Converted to PKCS12"
-            fi
+                  -destalias    "$ALIAS" \
+                  -noprompt 2>&1 && \
+            mv app/keystore/release.p12 app/keystore/release.keystore && \
+            echo "✅ Converted JKS → PKCS12" || \
+            echo "⚠️  Conversion failed, keeping original format"
           fi
 
-          # Step 5: write signing.properties
-          if [ -n "$KEYSTORE_PASSWORD" ]; then
-            printf 'storeFile=keystore/release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\nstoreType=PKCS12\n' \
-              "$KEYSTORE_PASSWORD" "${KEY_ALIAS:-ryoustream}" "$KEY_PASSWORD" \
-              > signing.properties
-            echo "✅ signing.properties ready"
+          # ── Step 5: write signing.properties ─────────────────────────────────
+          if [ -f app/keystore/release.keystore ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            cat > signing.properties << EOF
+          storeFile=keystore/release.keystore
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$ALIAS
+          keyPassword=$KEY_PASSWORD
+          storeType=PKCS12
+          EOF
+            echo "✅ signing.properties written"
+          else
+            echo "❌ Cannot write signing.properties — keystore or password missing"
+            echo "   Set KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD secrets"
+            exit 1
           fi
 
       - name: 🏗️ Build Release APK

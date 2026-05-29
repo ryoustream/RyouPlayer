@@ -40,23 +40,22 @@ object PermissionHelper {
      *
      * Priority:
      *   1. MANAGE_EXTERNAL_STORAGE on API 30+  (ideal — covers hidden files)
-     *   2. Granular READ_MEDIA_* on API 33+    (fallback if user denied #1)
+     *   2. READ_MEDIA_VIDEO on API 33+          (fallback if user denied #1)
      *   3. READ_EXTERNAL_STORAGE on API ≤ 32   (legacy)
+     *
+     * Note: READ_MEDIA_AUDIO is intentionally excluded — this is a video player
+     * and MANAGE_EXTERNAL_STORAGE already grants full storage access.
      */
     fun hasStoragePermission(context: Context): Boolean {
         // Best: all-files access
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hasAllFilesAccess()) {
             return true
         }
-        // Fallback: granular media permissions (Android 13+)
+        // Fallback: granular video permission only (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val hasVideo = ContextCompat.checkSelfPermission(
+            return ContextCompat.checkSelfPermission(
                 context, Manifest.permission.READ_MEDIA_VIDEO
             ) == PackageManager.PERMISSION_GRANTED
-            val hasAudio = ContextCompat.checkSelfPermission(
-                context, Manifest.permission.READ_MEDIA_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-            return hasVideo && hasAudio
         }
         // Legacy: READ_EXTERNAL_STORAGE (API ≤ 32)
         return ContextCompat.checkSelfPermission(
@@ -66,14 +65,11 @@ object PermissionHelper {
 
     /**
      * Granular media permissions used as a fallback when All-Files is denied.
-     * Returns the list appropriate for the current Android version.
+     * Only READ_MEDIA_VIDEO — this is a video player; audio permission removed.
      */
     fun granularMediaPermissions(): List<String> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            listOf(
-                Manifest.permission.READ_MEDIA_VIDEO,
-                Manifest.permission.READ_MEDIA_AUDIO,
-            )
+            listOf(Manifest.permission.READ_MEDIA_VIDEO)
         } else {
             listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         }

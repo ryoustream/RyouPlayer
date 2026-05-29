@@ -252,41 +252,75 @@ class PlayerViewModel @Inject constructor(
     /**
      * Internal: load a file by folder index without re-scanning.
      * Used by playNext / playPrev / auto-next to avoid index drift.
+     * Passes skipDbLookup=true so the title resolves async without blocking load.
      */
     private fun playAtIndex(idx: Int) {
         val uri = _folderFiles.getOrNull(idx) ?: return
         _folderIndex = idx
-        viewModelScope.launch { _loadAtIndex(idx, uri, 0L) }
+        viewModelScope.launch { _loadAtIndex(idx, uri, 0L, skipDbLookup = true) }
     }
 
-    /** Core load: resolve title, update state, call mpv. */
-    private suspend fun _loadAtIndex(idx: Int, uri: Uri, startMs: Long) {
-        val domainItem   = getMediaByUriUseCase(uri)
-        val displayTitle = domainItem?.displayName
-            ?: resolveDisplayName(uri)   // query DISPLAY_NAME — never use lastPathSegment
-            ?: uri.lastPathSegment ?: ""
-
-        currentMediaId = domainItem?.id ?: 0L
-
-        _state.update {
-            it.copy(
-                mediaTitle    = displayTitle,
-                playbackState = it.playbackState.copy(mediaItem = domainItem),
-                hasPrev       = idx > 0,
-                hasNext       = idx < _folderFiles.lastIndex,
-            )
-        }
-
+    /** Core load: resolve title, update state, call mpv.
+     *  @param skipDbLookup when true (next/prev navigation), skips DB/ContentResolver
+     *  title lookup before loading — instead fires mpv immediately for instant response,
+     *  then resolves the display name async and patches state once done. */
+    private suspend fun _loadAtIndex(idx: Int, uri: Uri, startMs: Long, skipDbLookup: Boolean = false) {
         val path = when (uri.scheme) {
             "content" -> uri.toString()
             "file"    -> uri.path ?: uri.toString()
             else      -> uri.toString()
         }
 
-        _intentionalLoad = true   // guard against END_FILE chain reaction
-        MPVLib.loadFile(path, startMs)
-        showControlsTemporarily()
-        startPositionUpdates()
+        if (skipDbLookup) {
+            // ── Fast path: start loading immediately, patch title later ──────
+            _state.update {
+                it.copy(
+                    mediaTitle    = "",   // cleared until async resolve finishes
+                    playbackState = it.playbackState.copy(mediaItem = null),
+                    hasPrev       = idx > 0,
+                    hasNext       = idx < _folderFiles.lastIndex,
+                )
+            }
+            _intentionalLoad = true
+            MPVLib.loadFile(path, startMs)
+            showControlsTemporarily()
+            startPositionUpdates()
+
+            // Resolve title + DB entry in background — patches state when ready
+            viewModelScope.launch(Dispatchers.IO) {
+                val domainItem   = runCatching { getMediaByUriUseCase(uri) }.getOrNull()
+                val displayTitle = domainItem?.displayName
+                    ?: resolveDisplayName(uri)
+                    ?: uri.lastPathSegment ?: ""
+                currentMediaId = domainItem?.id ?: 0L
+                _state.update { it.copy(
+                    mediaTitle    = displayTitle,
+                    playbackState = it.playbackState.copy(mediaItem = domainItem),
+                )}
+            }
+        } else {
+            // ── Normal path: resolve title first, then load ───────────────────
+            val domainItem   = getMediaByUriUseCase(uri)
+            val displayTitle = domainItem?.displayName
+                ?: resolveDisplayName(uri)
+                ?: uri.lastPathSegment ?: ""
+
+            currentMediaId = domainItem?.id ?: 0L
+
+            _state.update {
+                it.copy(
+                    mediaTitle    = displayTitle,
+                    playbackState = it.playbackState.copy(mediaItem = domainItem),
+                    hasPrev       = idx > 0,
+                    hasNext       = idx < _folderFiles.lastIndex,
+                )
+            }
+
+            _intentionalLoad = true
+            MPVLib.loadFile(path, startMs)
+            showControlsTemporarily()
+            startPositionUpdates()
+        }
     }
 
     /** Query actual filename — never expose raw media IDs as titles.

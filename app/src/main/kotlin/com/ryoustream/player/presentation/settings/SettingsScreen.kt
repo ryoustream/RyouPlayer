@@ -53,7 +53,7 @@ data class SettingsUiState(
     val cacheSize: Int = 256,
     val codecPreference: String = "AUTO",
     val showHiddenFiles: Boolean = false,
-    val ignoreNomedia: Boolean = true,
+    val ignoreNomedia: Boolean = false,
 )
 
 @HiltViewModel

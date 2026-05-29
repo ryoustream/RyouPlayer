@@ -30,7 +30,8 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 // History: 001 = initial 1.2, 002 = audio panel, 003 = hidden-file/audio-delay fix,
 //          004 = all-files access + pull-to-refresh + splash icon fix,
 //          005 = pull-refresh rework + permission lifecycle fix + .nomedia fs-scan + version sync
-val versionNameMinor: Int = 5
+//          006 = rm READ_MEDIA_AUDIO, nomedia default off, instant next/prev, black-screen fix, keystore fix
+val versionNameMinor: Int = 6
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066

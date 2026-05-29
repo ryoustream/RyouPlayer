@@ -17,12 +17,11 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
 
-    <!-- Granular media permissions — used as a supplement on Android 13+
-         (MANAGE_EXTERNAL_STORAGE already covers these, but keeping them
-         here ensures the READ_MEDIA_* grants survive if the user later
-         revokes All-Files access.) -->
+    <!-- Granular media permissions — video only, used as fallback on Android 13+
+         when MANAGE_EXTERNAL_STORAGE is denied.
+         READ_MEDIA_AUDIO removed: this is a video player and MANAGE_EXTERNAL_STORAGE
+         already covers all storage access. Audio permission is unnecessary. -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <!-- Fallback for Android 12 (API 32) and below -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"

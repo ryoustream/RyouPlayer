@@ -93,7 +93,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override val cacheSize = dataStore.readSafely(Keys.CACHE_SIZE, 256)
     override val codecPreference = dataStore.readSafely(Keys.CODEC_PREFERENCE, "AUTO")
     override val showHiddenFiles = dataStore.readSafely(Keys.SHOW_HIDDEN_FILES, false)
-    override val ignoreNomedia = dataStore.readSafely(Keys.IGNORE_NOMEDIA, true)
+    override val ignoreNomedia = dataStore.readSafely(Keys.IGNORE_NOMEDIA, false)
     override val ignoreNotch = dataStore.readSafely(Keys.IGNORE_NOTCH, false)
 
     // ─── Setters ──────────────────────────────────────────────────────────────
