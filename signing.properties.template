@@ -1,17 +1,35 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # signing.properties.template
 #
-# Copy to signing.properties for LOCAL builds only.
-# ❌ NEVER commit signing.properties to git!
+# Copy to signing.properties for LOCAL release builds only.
+#   cp signing.properties.template signing.properties
 #
-# For GitHub Actions, set these GitHub Secrets:
-#   KEYSTORE_BASE64   → base64 encoded .p12 keystore
-#   KEYSTORE_PASSWORD → defaultryoustream
-#   KEY_ALIAS         → ryoustream
-#   KEY_PASSWORD      → defaultryoustream
-# ──────────────────────────────────────────────────────────────────────────────
-
+# ❌ NEVER commit signing.properties to git!
+#    It is listed in .gitignore.
+#
+# ── KEYSTORE CONSISTENCY RULE ────────────────────────────────────────────────
+# The keystore (release.keystore) MUST be the same file across all releases.
+# Android uses the keystore signature to verify update integrity.
+# If you change the keystore between releases, users must uninstall and
+# reinstall — Android will refuse to install the update with a different sig.
+#
+# Store the keystore securely:
+#   • Locally: keep outside the repo in a safe directory.
+#   • CI (GitHub Actions): base64-encode and store as KEYSTORE_BASE64 secret.
+#       $ base64 -w 0 release.keystore
+#
+# ── LOCAL BUILD (copy this file to signing.properties) ───────────────────────
 storeFile=keystore/release.keystore
 storePassword=defaultryoustream
 keyAlias=ryoustream
 keyPassword=defaultryoustream
+# storeType is optional; omit or set to PKCS12 (recommended) or JKS (legacy).
+# Android Studio keytool generates PKCS12 by default since JDK 9.
+storeType=PKCS12
+
+# ── GITHUB ACTIONS SECRETS (set in repo Settings → Secrets) ──────────────────
+# KEYSTORE_BASE64    = base64 of release.keystore
+# KEYSTORE_PASSWORD  = defaultryoustream
+# KEY_ALIAS          = ryoustream
+# KEY_PASSWORD       = defaultryoustream
+# ──────────────────────────────────────────────────────────────────────────────

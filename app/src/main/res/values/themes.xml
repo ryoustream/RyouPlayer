@@ -7,10 +7,16 @@
         <item name="android:enforceStatusBarContrast">false</item>
     </style>
 
-    <!-- Splash screen theme -->
+    <!-- Splash screen theme
+         windowSplashScreenAnimatedIcon must be the FOREGROUND drawable only
+         (no background padding). Using @mipmap/ic_launcher would include
+         the white background square and look wrong. We use the vector
+         foreground directly so the icon renders cleanly on the
+         windowSplashScreenBackground colour defined below. -->
     <style name="Theme.RyouPlayer.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_background</item>
         <item name="postSplashScreenTheme">@style/Theme.RyouPlayer</item>
     </style>
 

@@ -31,6 +31,7 @@ enum class HomeTab(val label: String) {
 
 data class HomeUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val videos: List<MediaItem> = emptyList(),
     val recentVideos: List<MediaItem> = emptyList(),
     val folders: List<MediaFolder> = emptyList(),
@@ -171,6 +172,20 @@ class HomeViewModel @Inject constructor(
             loadAllVideos()
             loadFolders()
             _uiState.update { it.copy(isLoading = false) }
+        }
+    }
+
+    /** Pull-to-refresh: silently reload all data without the full loading skeleton. */
+    fun onRefresh() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            rescanMediaUseCase()
+            loadAllVideos()
+            loadFolders()
+            loadRecent()
+            loadStreams()
+            loadPlaylists()
+            _uiState.update { it.copy(isRefreshing = false) }
         }
     }
 

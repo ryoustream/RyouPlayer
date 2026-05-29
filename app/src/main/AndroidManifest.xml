@@ -3,12 +3,27 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ═══════════════════════════════════════════════════════
-         STORAGE PERMISSIONS (Android 12+ / Scoped Storage)
+         STORAGE PERMISSIONS
     ═══════════════════════════════════════════════════════ -->
+    <!--
+        MANAGE_EXTERNAL_STORAGE — "All files access" (Android 11+ / API 30+).
+        Required to see files inside .nomedia folders and dot-prefixed (hidden)
+        directories that the MediaStore index deliberately excludes.
+        On Android 11+ the user is sent to the system "Special app access →
+        All files access" settings page to grant this.
+        On Android 10 and below we fall back to READ_EXTERNAL_STORAGE.
+        Google Play: declare but guard with maxSdkVersion on the fallback.
+    -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
+    <!-- Granular media permissions — used as a supplement on Android 13+
+         (MANAGE_EXTERNAL_STORAGE already covers these, but keeping them
+         here ensures the READ_MEDIA_* grants survive if the user later
+         revokes All-Files access.) -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <!-- Fallback for Android 12 -->
+    <!-- Fallback for Android 12 (API 32) and below -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />

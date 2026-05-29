@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="splash_background">#0F1923</color>
+    <!-- Brand palette -->
     <color name="ryou_primary">#4A7EC7</color>
     <color name="ryou_primary_dark">#90BBF0</color>
     <color name="ryou_secondary">#4E6B94</color>
@@ -8,6 +8,16 @@
     <color name="ryou_surface_dark">#141E2B</color>
     <color name="ryou_background">#FEF9ED</color>
     <color name="ryou_player_bg">#000000</color>
-    <!-- Launcher icon background - krem dari gambar icon -->
+
+    <!--
+        ic_launcher_background — launcher adaptive icon background (cream).
+        Used by the adaptive-icon XML files in mipmap-anydpi-v26/.
+    -->
     <color name="ic_launcher_background">#FEF9ED</color>
+
+    <!--
+        splash_background — SplashScreen window background.
+        Deep navy so the blue icon logo has strong contrast.
+    -->
+    <color name="splash_background">#0F1923</color>
 </resources>

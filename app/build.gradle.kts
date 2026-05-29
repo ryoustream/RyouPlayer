@@ -19,26 +19,29 @@ val buildDate: String = SimpleDateFormat("yyyyMMdd").format(Date())
 val buildTime: String = SimpleDateFormat("HHmm").format(Date())
 val META_VERSION = 1   // always 1 — identifies RyouPlayer
 val versionMajor = 2   // major release (maps to "2" in v1.2.x)
-val versionMinor = 0   // minor/patch (reset to 0 on major bump; versionName minor ≠ buildNumber)
 
 // BUILD_NUMBER from CI (GitHub Actions run_number).
-// This is the "minor fix / build" counter (0065 in 01_02_0065).
-val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "65").toIntOrNull() ?: 65
+// This is the "patch / build" counter used in versionCode.
+val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "66").toIntOrNull() ?: 66
 val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 
-// VERSION_NAME_MINOR is reset to 1 on each Major bump, then incremented per major fix.
-// It does NOT equal buildNumber. Set manually.
-// Example: versionName 1.2.003 → VERSION_NAME_MINOR = 3
-val versionNameMinor: Int = 3
+// versionNameMinor — bump manually on every feature/fix release.
+// Rule: reset to 1 on versionMajor bump, then increment by 1 per release.
+// History: 001 = initial 1.2, 002 = audio panel, 003 = hidden-file/audio-delay fix,
+//          004 = all-files access + pull-to-refresh + splash icon fix
+val versionNameMinor: Int = 4
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
-// Encoding: 01_02_0065 → 1*1_000_000 + 2*10_000 + 65 = 1_020_065
-// v1.2.x always > v1.1.x: 1_020_065 > 1_010_999 ✓
+// Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066
+// Guarantees: v1.2.x always > v1.1.x (1_020_xxx > 1_010_999) ✓
+// CRITICAL: versionCode must always INCREASE between releases.
+//           Never reuse a BUILD_NUMBER; the keystore must stay the same
+//           keystore for all releases (changing keystore = users must uninstall).
 val calculatedVersionCode: Int =
     META_VERSION * 1_000_000 + versionMajor * 10_000 + buildNumber
 
 // versionName: {META}.{MAJOR}.{MINOR:03d}
-// Example: 1.2.003
+// Example: 1.2.004
 val calculatedVersionName: String =
     "$META_VERSION.$versionMajor.${versionNameMinor.toString().padStart(3, '0')}"
 

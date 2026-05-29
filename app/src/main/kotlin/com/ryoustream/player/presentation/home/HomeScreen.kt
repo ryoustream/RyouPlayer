@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.SecondaryIndicator
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -133,77 +134,86 @@ fun HomeScreen(
                 )
             }
 
-            AnimatedContent(
-                targetState = when {
-                    isFolderDetail -> "folder_detail"
-                    searchExpanded && uiState.searchQuery.isNotEmpty() -> "search"
-                    else -> uiState.selectedTab.name
-                },
-                transitionSpec = {
-                    (fadeIn(tween(200)) + slideInHorizontally { it / 20 })
-                        .togetherWith(fadeOut(tween(150)))
-                },
-                label = "tab_content",
-                modifier = Modifier.fillMaxSize(),
-            ) { target ->
-                when (target) {
-                    "folder_detail" -> FolderDetailContent(
-                        folderId        = folderId!!,
-                        uiState         = uiState,
-                        onMediaClick    = onMediaClick,
-                        onFavoriteToggle = viewModel::onToggleFavorite,
-                    )
-                    "search" -> VideoContent(
-                        items           = uiState.videos,
-                        viewMode        = uiState.viewMode,
-                        onMediaClick    = onMediaClick,
-                        onFavoriteToggle = viewModel::onToggleFavorite,
-                        emptyIcon       = Icons.Outlined.SearchOff,
-                        emptyTitle      = "No results for \"${uiState.searchQuery}\"",
-                        emptySubtitle   = "Try different keywords",
-                    )
-                    HomeTab.FOLDERS.name -> FolderTabContent(
-                        folders     = uiState.folders,
-                        isLoading   = uiState.isLoading,
-                        onFolderClick = onFolderClick,
-                        onRescan    = viewModel::onRescanMedia,
-                    )
-                    HomeTab.ALL.name -> VideoContent(
-                        items           = uiState.videos,
-                        viewMode        = uiState.viewMode,
-                        isLoading       = uiState.isLoading,
-                        onMediaClick    = onMediaClick,
-                        onFavoriteToggle = viewModel::onToggleFavorite,
-                        emptyIcon       = Icons.Outlined.VideoLibrary,
-                        emptyTitle      = "No videos found",
-                        emptySubtitle   = "No video files found on this device",
-                        onRescan        = viewModel::onRescanMedia,
-                    )
-                    HomeTab.RECENT.name -> VideoContent(
-                        items           = uiState.recentVideos,
-                        viewMode        = uiState.viewMode,
-                        onMediaClick    = onMediaClick,
-                        onFavoriteToggle = viewModel::onToggleFavorite,
-                        emptyIcon       = Icons.Outlined.History,
-                        emptyTitle      = "No recent videos",
-                        emptySubtitle   = "Your recently played videos appear here",
-                    )
-                    HomeTab.STREAM.name -> StreamTabContent(
-                        streams          = uiState.streams,
-                        onStreamClick    = onStreamClick,
-                        onDeleteStream   = viewModel::onDeleteStream,
-                        onToggleFavorite = viewModel::onToggleStreamFavorite,
-                        onAddClick       = viewModel::onShowAddStreamDialog,
-                    )
-                    HomeTab.PLAYLIST.name -> PlaylistTabContent(
-                        playlists        = uiState.playlists,
-                        onPlaylistClick  = onPlaylistClick,
-                        onDeletePlaylist = viewModel::onDeletePlaylist,
-                        onCreateClick    = viewModel::onShowCreatePlaylistDialog,
-                    )
-                    else -> Unit
+            // Pull-to-refresh wraps the entire tab content area.
+            // Disabled during search to avoid accidental refresh.
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh    = viewModel::onRefresh,
+                enabled      = !searchExpanded,
+                modifier     = Modifier.fillMaxSize(),
+            ) {
+                AnimatedContent(
+                    targetState = when {
+                        isFolderDetail -> "folder_detail"
+                        searchExpanded && uiState.searchQuery.isNotEmpty() -> "search"
+                        else -> uiState.selectedTab.name
+                    },
+                    transitionSpec = {
+                        (fadeIn(tween(200)) + slideInHorizontally { it / 20 })
+                            .togetherWith(fadeOut(tween(150)))
+                    },
+                    label = "tab_content",
+                    modifier = Modifier.fillMaxSize(),
+                ) { target ->
+                    when (target) {
+                        "folder_detail" -> FolderDetailContent(
+                            folderId        = folderId!!,
+                            uiState         = uiState,
+                            onMediaClick    = onMediaClick,
+                            onFavoriteToggle = viewModel::onToggleFavorite,
+                        )
+                        "search" -> VideoContent(
+                            items           = uiState.videos,
+                            viewMode        = uiState.viewMode,
+                            onMediaClick    = onMediaClick,
+                            onFavoriteToggle = viewModel::onToggleFavorite,
+                            emptyIcon       = Icons.Outlined.SearchOff,
+                            emptyTitle      = "No results for \"${uiState.searchQuery}\"",
+                            emptySubtitle   = "Try different keywords",
+                        )
+                        HomeTab.FOLDERS.name -> FolderTabContent(
+                            folders     = uiState.folders,
+                            isLoading   = uiState.isLoading,
+                            onFolderClick = onFolderClick,
+                            onRescan    = viewModel::onRescanMedia,
+                        )
+                        HomeTab.ALL.name -> VideoContent(
+                            items           = uiState.videos,
+                            viewMode        = uiState.viewMode,
+                            isLoading       = uiState.isLoading,
+                            onMediaClick    = onMediaClick,
+                            onFavoriteToggle = viewModel::onToggleFavorite,
+                            emptyIcon       = Icons.Outlined.VideoLibrary,
+                            emptyTitle      = "No videos found",
+                            emptySubtitle   = "No video files found on this device",
+                            onRescan        = viewModel::onRescanMedia,
+                        )
+                        HomeTab.RECENT.name -> VideoContent(
+                            items           = uiState.recentVideos,
+                            viewMode        = uiState.viewMode,
+                            onMediaClick    = onMediaClick,
+                            onFavoriteToggle = viewModel::onToggleFavorite,
+                            emptyIcon       = Icons.Outlined.History,
+                            emptyTitle      = "No recent videos",
+                            emptySubtitle   = "Your recently played videos appear here",
+                        )
+                        HomeTab.STREAM.name -> StreamTabContent(
+                            streams          = uiState.streams,
+                            onStreamClick    = onStreamClick,
+                            onDeleteStream   = viewModel::onDeleteStream,
+                            onToggleFavorite = viewModel::onToggleStreamFavorite,
+                            onAddClick       = viewModel::onShowAddStreamDialog,
+                        )
+                        HomeTab.PLAYLIST.name -> PlaylistTabContent(
+                            playlists        = uiState.playlists,
+                            onPlaylistClick  = onPlaylistClick,
+                            onDeletePlaylist = viewModel::onDeletePlaylist,
+                            onCreateClick    = viewModel::onShowCreatePlaylistDialog,
+                        )
+                        else -> Unit
+                    }
                 }
-            }
+            } // PullToRefreshBox
         }
     }
 
