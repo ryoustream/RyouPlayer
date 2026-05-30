@@ -517,12 +517,17 @@ class PlayerViewModel @Inject constructor(
         while (ia < a.length && ib < b.length) {
             val ca = a[ia]; val cb = b[ib]
             if (ca.isDigit() && cb.isDigit()) {
-                // Compare numeric segments by value, then by length
                 val na = a.drop(ia).takeWhile { it.isDigit() }
                 val nb = b.drop(ib).takeWhile { it.isDigit() }
-                val diff = na.trimStart('0').ifEmpty { "0" }
-                    .compareTo(nb.trimStart('0').ifEmpty { "0" }, ignoreCase = false)
-                    .let { if (it != 0) it else na.length - nb.length }
+                // Compare by NUMERIC value, not lexicographic — "2" < "10" not "2" > "10"
+                val diff = na.toLongOrNull().let { numA ->
+                    nb.toLongOrNull().let { numB ->
+                        when {
+                            numA != null && numB != null -> numA.compareTo(numB)
+                            else -> na.compareTo(nb)
+                        }
+                    }
+                }
                 if (diff != 0) return diff
                 ia += na.length; ib += nb.length
             } else {
