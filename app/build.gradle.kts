@@ -22,7 +22,7 @@ val versionMajor = 2   // major release (maps to "2" in v1.2.x)
 
 // BUILD_NUMBER from CI (GitHub Actions run_number).
 // This is the "patch / build" counter used in versionCode.
-val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "66").toIntOrNull() ?: 66
+val buildNumber: Int = (System.getenv("BUILD_NUMBER") ?: "73").toIntOrNull() ?: 73
 val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 
 // versionNameMinor — bump manually on every feature/fix release.
@@ -32,7 +32,8 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 //          005 = pull-refresh rework + permission lifecycle fix + .nomedia fs-scan + version sync
 //          006 = rm READ_MEDIA_AUDIO, nomedia default off, instant next/prev, black-screen fix, keystore fix
 //          007 = video-info scroll, gesture/controls fix, title fix, notif title, perm cleanup, apk size -~1.2MB
-val versionNameMinor: Int = 7
+//          008 = folder list/grid toggle, build# sync fix, keystore update
+val versionNameMinor: Int = 8
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066

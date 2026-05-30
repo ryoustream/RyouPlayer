@@ -41,6 +41,7 @@ data class HomeUiState(
     // Default: A-Z by name, Folder tab shown first
     val sortOrder: MediaSortOrder = MediaSortOrder.NAME_ASC,
     val viewMode: ViewMode = ViewMode.GRID,
+    val folderViewMode: ViewMode = ViewMode.GRID,
     val selectedTab: HomeTab = HomeTab.FOLDERS,
     // Stream dialog
     val showAddStreamDialog: Boolean = false,
@@ -178,6 +179,12 @@ class HomeViewModel @Inject constructor(
     fun onViewModeToggle() {
         _uiState.update {
             it.copy(viewMode = if (it.viewMode == ViewMode.GRID) ViewMode.LIST else ViewMode.GRID)
+        }
+    }
+
+    fun onFolderViewModeToggle() {
+        _uiState.update {
+            it.copy(folderViewMode = if (it.folderViewMode == ViewMode.GRID) ViewMode.LIST else ViewMode.GRID)
         }
     }
 

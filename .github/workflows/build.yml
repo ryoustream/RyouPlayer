@@ -52,11 +52,8 @@ jobs:
       - name: 📋 Set build metadata
         id: meta
         run: |
-          # BUILD_OFFSET resets displayed build counter for v1.2
-          BUILD_OFFSET=60
-          RAW_BUILD=${{ github.run_number }}
-          BUILD_NUMBER=$(( RAW_BUILD - BUILD_OFFSET ))
-          [ $BUILD_NUMBER -lt 1 ] && BUILD_NUMBER=1
+          # BUILD_NUMBER = github.run_number (no offset) so workflow build# = release build# = versionCode
+          BUILD_NUMBER=${{ github.run_number }}
           COMMIT_HASH=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date +'%Y%m%d')
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
@@ -185,11 +182,8 @@ jobs:
       - name: 📋 Set build metadata
         id: meta
         run: |
-          # BUILD_OFFSET resets displayed build counter for v1.2
-          BUILD_OFFSET=60
-          RAW_BUILD=${{ github.run_number }}
-          BUILD_NUMBER=$(( RAW_BUILD - BUILD_OFFSET ))
-          [ $BUILD_NUMBER -lt 1 ] && BUILD_NUMBER=1
+          # BUILD_NUMBER = github.run_number (no offset) so workflow build# = release build# = versionCode
+          BUILD_NUMBER=${{ github.run_number }}
           COMMIT_HASH=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date +'%Y%m%d')
           echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
@@ -237,7 +231,7 @@ jobs:
         run: |
           mkdir -p app/keystore
 
-          ALIAS="${KEY_ALIAS:-ryoustream}"
+          ALIAS="${KEY_ALIAS:-ryoualias123}"
           VALID=false
 
           # ── Step 1: decode the base64 keystore ──────────────────────────────

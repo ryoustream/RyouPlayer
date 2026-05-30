@@ -92,6 +92,8 @@ fun HomeScreen(
                 onSortMenuDismiss = { showSortMenu = false },
                 onSortOrderChange = { viewModel.onSortOrderChange(it); showSortMenu = false },
                 onViewModeToggle = viewModel::onViewModeToggle,
+                onFolderViewModeToggle = viewModel::onFolderViewModeToggle,
+                folderViewMode = uiState.folderViewMode,
                 onRescan = viewModel::onRescanMedia,
                 onSettings = onSettingsClick,
                 onBack = onBack,
@@ -171,10 +173,11 @@ fun HomeScreen(
                             emptySubtitle   = "Try different keywords",
                         )
                         HomeTab.FOLDERS.name -> FolderTabContent(
-                            folders     = uiState.folders,
-                            isLoading   = uiState.isLoading,
+                            folders       = uiState.folders,
+                            isLoading     = uiState.isLoading,
+                            viewMode      = uiState.folderViewMode,
                             onFolderClick = onFolderClick,
-                            onRescan    = viewModel::onRescanMedia,
+                            onRescan      = viewModel::onRescanMedia,
                         )
                         HomeTab.ALL.name -> VideoContent(
                             items           = uiState.videos,
@@ -261,6 +264,8 @@ private fun RyouTopBar(
     onSortMenuDismiss: () -> Unit,
     onSortOrderChange: (MediaSortOrder) -> Unit,
     onViewModeToggle: () -> Unit,
+    onFolderViewModeToggle: () -> Unit,
+    folderViewMode: ViewMode,
     onRescan: () -> Unit,
     onSettings: () -> Unit,
     onBack: (() -> Unit)?,
@@ -321,6 +326,7 @@ private fun RyouTopBar(
                 IconButton(onClick = onSearchExpand) {
                     Icon(Icons.Default.Search, contentDescription = "Search")
                 }
+                // View mode toggle for videos (ALL, RECENT, folder detail, search)
                 if (!isFolderDetail &&
                     selectedTab != HomeTab.FOLDERS &&
                     selectedTab != HomeTab.STREAM &&
@@ -331,6 +337,16 @@ private fun RyouTopBar(
                             imageVector = if (viewMode == ViewMode.GRID)
                                 Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                             contentDescription = "Toggle view",
+                        )
+                    }
+                }
+                // View mode toggle for Folders tab
+                if (!isFolderDetail && selectedTab == HomeTab.FOLDERS) {
+                    IconButton(onClick = onFolderViewModeToggle) {
+                        Icon(
+                            imageVector = if (folderViewMode == ViewMode.GRID)
+                                Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+                            contentDescription = "Toggle folder view",
                         )
                     }
                 }
@@ -444,6 +460,7 @@ private fun tabIcon(tab: HomeTab): ImageVector = when (tab) {
 private fun FolderTabContent(
     folders: List<MediaFolder>,
     isLoading: Boolean,
+    viewMode: ViewMode = ViewMode.GRID,
     onFolderClick: (MediaFolder) -> Unit,
     onRescan: () -> Unit,
 ) {
@@ -459,18 +476,103 @@ private fun FolderTabContent(
             subtitle = "No video folders found on this device",
             action   = { Button(onClick = onRescan) { Text("Scan for Videos") } },
         )
-        else -> LazyVerticalGrid(
-            columns              = GridCells.Adaptive(minSize = 160.dp),
-            contentPadding       = PaddingValues(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement  = Arrangement.spacedBy(10.dp),
-            modifier             = Modifier.fillMaxSize(),
-        ) {
-            items(items = folders, key = { it.id }) { folder ->
-                FolderCard(folder = folder, onClick = { onFolderClick(folder) })
-            }
+        viewMode == ViewMode.LIST -> FolderList(folders, onFolderClick)
+        else -> FolderGrid(folders, onFolderClick)
+    }
+}
+
+@Composable
+private fun FolderGrid(
+    folders: List<MediaFolder>,
+    onFolderClick: (MediaFolder) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns              = GridCells.Adaptive(minSize = 160.dp),
+        contentPadding       = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement  = Arrangement.spacedBy(10.dp),
+        modifier             = Modifier.fillMaxSize(),
+    ) {
+        items(items = folders, key = { it.id }) { folder ->
+            FolderCard(folder = folder, onClick = { onFolderClick(folder) })
         }
     }
+}
+
+@Composable
+private fun FolderList(
+    folders: List<MediaFolder>,
+    onFolderClick: (MediaFolder) -> Unit,
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(vertical = 4.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        items(items = folders, key = { it.id }) { folder ->
+            FolderListRow(folder = folder, onClick = { onFolderClick(folder) })
+            HorizontalDivider(
+                modifier  = Modifier.padding(start = 80.dp),
+                thickness = 0.5.dp,
+                color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderListRow(folder: MediaFolder, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = {
+            Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.SemiBold)
+        },
+        supportingContent = {
+            Text(
+                "${folder.mediaCount} ${if (folder.mediaCount == 1) "video" else "videos"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        leadingContent = {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape    = RoundedCornerShape(10.dp),
+                color    = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                if (folder.thumbnailUri != null) {
+                    AsyncImage(
+                        model            = folder.thumbnailUri,
+                        contentDescription = folder.name,
+                        contentScale     = ContentScale.Crop,
+                        modifier         = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+                    )
+                } else {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            Icons.Default.Folder, null,
+                            tint     = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                }
+            }
+        },
+        trailingContent = {
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+            ) {
+                Text(
+                    "${folder.mediaCount}",
+                    color      = MaterialTheme.colorScheme.onPrimaryContainer,
+                    style      = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier   = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        },
+        modifier = Modifier.clickable(onClick = onClick),
+    )
 }
 
 @Composable
