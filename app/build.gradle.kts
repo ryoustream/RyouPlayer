@@ -112,7 +112,8 @@ android {
                 storeFile = file(signingProps.getProperty("storeFile", "keystore/release.keystore"))
                 storePassword = signingProps.getProperty("storePassword", "")
                 keyAlias = signingProps.getProperty("keyAlias", "ryoualias123")
-                keyPassword = signingProps.getProperty("keyPassword", "")
+                // PKCS12: keyPassword must equal storePassword
+                keyPassword = signingProps.getProperty("storePassword", "")
                 // storeType: auto-detected by workflow (JKS or PKCS12)
                 val ksType = signingProps.getProperty("storeType", "")
                 if (ksType.isNotEmpty()) storeType = ksType
@@ -128,7 +129,8 @@ android {
                 }
                 storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
                 keyAlias = System.getenv("KEY_ALIAS") ?: "ryoualias123"
-                keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+                // PKCS12: keyPassword must equal storePassword
+                keyPassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
             }
         }
     }

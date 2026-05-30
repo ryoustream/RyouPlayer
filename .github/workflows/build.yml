@@ -329,14 +329,19 @@ jobs:
           fi
 
           # ── Step 5: write signing.properties ─────────────────────────────────
+          # PKCS12 CRITICAL: keyPassword must equal storePassword.
+          # Android's KeystoreHelper uses keyPassword to decrypt the private key.
+          # If they differ, you get: "Given final block not properly padded" (BadPaddingException).
+          # For PKCS12, keytool ignores -keypass at creation and always uses storepass.
+          # So we always write keyPassword=storePassword here.
           if [ -f app/keystore/release.keystore ] && [ -n "$KEYSTORE_PASSWORD" ]; then
             cat > signing.properties << EOF
-          storeFile=keystore/release.keystore
-          storePassword=$KEYSTORE_PASSWORD
-          keyAlias=$ALIAS
-          keyPassword=$KEY_PASSWORD
-          storeType=PKCS12
-          EOF
+storeFile=keystore/release.keystore
+storePassword=$KEYSTORE_PASSWORD
+keyAlias=$ALIAS
+keyPassword=$KEYSTORE_PASSWORD
+storeType=PKCS12
+EOF
             echo "✅ signing.properties written"
           else
             echo "❌ Cannot write signing.properties — keystore or password missing"
