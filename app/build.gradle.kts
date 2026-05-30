@@ -111,7 +111,7 @@ android {
                 // From signing.properties file (CI or local)
                 storeFile = file(signingProps.getProperty("storeFile", "keystore/release.keystore"))
                 storePassword = signingProps.getProperty("storePassword", "")
-                keyAlias = signingProps.getProperty("keyAlias", "ryoustream")
+                keyAlias = signingProps.getProperty("keyAlias", "ryoualias123")
                 keyPassword = signingProps.getProperty("keyPassword", "")
                 // storeType: auto-detected by workflow (JKS or PKCS12)
                 val ksType = signingProps.getProperty("storeType", "")
@@ -127,7 +127,7 @@ android {
                     storeFile = keystoreFile
                 }
                 storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
-                keyAlias = System.getenv("KEY_ALIAS") ?: "ryoustream"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "ryoualias123"
                 keyPassword = System.getenv("KEY_PASSWORD") ?: ""
             }
         }

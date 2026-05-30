@@ -20,16 +20,16 @@
 #
 # ── LOCAL BUILD (copy this file to signing.properties) ───────────────────────
 storeFile=keystore/release.keystore
-storePassword=defaultryoustream
-keyAlias=ryoustream
-keyPassword=defaultryoustream
+storePassword=defaultryou123
+keyAlias=ryoualias123
+keyPassword=defaultryou123
 # storeType is optional; omit or set to PKCS12 (recommended) or JKS (legacy).
 # Android Studio keytool generates PKCS12 by default since JDK 9.
 storeType=PKCS12
 
 # ── GITHUB ACTIONS SECRETS (set in repo Settings → Secrets) ──────────────────
 # KEYSTORE_BASE64    = base64 of release.keystore
-# KEYSTORE_PASSWORD  = defaultryoustream
-# KEY_ALIAS          = ryoustream
-# KEY_PASSWORD       = defaultryoustream
+# KEYSTORE_PASSWORD  = defaultryou123
+# KEY_ALIAS          = ryoualias123
+# KEY_PASSWORD       = defaultryou123
 # ──────────────────────────────────────────────────────────────────────────────
