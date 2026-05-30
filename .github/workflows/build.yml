@@ -335,13 +335,13 @@ jobs:
           # For PKCS12, keytool ignores -keypass at creation and always uses storepass.
           # So we always write keyPassword=storePassword here.
           if [ -f app/keystore/release.keystore ] && [ -n "$KEYSTORE_PASSWORD" ]; then
-            cat > signing.properties << EOF
-storeFile=keystore/release.keystore
-storePassword=$KEYSTORE_PASSWORD
-keyAlias=$ALIAS
-keyPassword=$KEYSTORE_PASSWORD
-storeType=PKCS12
-EOF
+            {
+              echo "storeFile=keystore/release.keystore"
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyAlias=$ALIAS"
+              echo "keyPassword=$KEYSTORE_PASSWORD"
+              echo "storeType=PKCS12"
+            } > signing.properties
             echo "✅ signing.properties written"
           else
             echo "❌ Cannot write signing.properties — keystore or password missing"
