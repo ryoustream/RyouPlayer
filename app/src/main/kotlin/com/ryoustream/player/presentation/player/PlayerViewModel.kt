@@ -15,6 +15,7 @@ import com.ryoustream.player.domain.model.AssCue
 import com.ryoustream.player.domain.repository.SettingsRepository
 import com.ryoustream.player.domain.usecase.GetMediaByUriUseCase
 import com.ryoustream.player.domain.usecase.UpdatePlaybackPositionUseCase
+import com.ryoustream.player.service.RyouPlaybackService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `is`.xyz.mpv.MPVLib
@@ -283,6 +284,7 @@ class PlayerViewModel @Inject constructor(
             }
             _intentionalLoad = true
             MPVLib.loadFile(path, startMs)
+            RyouPlaybackService.start(context)
             showControlsTemporarily()
             startPositionUpdates()
 
@@ -297,6 +299,8 @@ class PlayerViewModel @Inject constructor(
                     mediaTitle    = displayTitle,
                     playbackState = it.playbackState.copy(mediaItem = domainItem),
                 )}
+                // Patch notification title once resolved
+                RyouPlaybackService.notifyPlaying(context, isPlaying = true, title = displayTitle)
             }
         } else {
             // ── Normal path: resolve title first, then load ───────────────────
@@ -318,6 +322,8 @@ class PlayerViewModel @Inject constructor(
 
             _intentionalLoad = true
             MPVLib.loadFile(path, startMs)
+            RyouPlaybackService.start(context)
+            RyouPlaybackService.notifyPlaying(context, isPlaying = true, title = displayTitle)
             showControlsTemporarily()
             startPositionUpdates()
         }
@@ -580,6 +586,12 @@ class PlayerViewModel @Inject constructor(
                     ))
                 }
                 if (!value) startPositionUpdates() else stopPositionUpdates()
+                // Keep notification in sync with play/pause state
+                RyouPlaybackService.notifyPlaying(
+                    context,
+                    isPlaying = !value,
+                    title     = _state.value.mediaTitle,
+                )
             }
         }
     }
@@ -587,8 +599,12 @@ class PlayerViewModel @Inject constructor(
     override fun eventProperty(property: String, value: String) {
         when (property) {
             "media-title", "metadata/by-key/title" -> {
-                if (value.isNotBlank())
+                // Skip purely numeric values — mpv reports the last path segment of
+                // content:// MediaStore URIs as media-title (e.g. "11038492").
+                // A proper display name always contains at least one non-digit char.
+                if (value.isNotBlank() && value.any { !it.isDigit() }) {
                     _state.update { it.copy(mediaTitle = value) }
+                }
             }
             "speed" -> {
                 value.toDoubleOrNull()?.let { spd ->

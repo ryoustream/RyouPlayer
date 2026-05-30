@@ -105,9 +105,14 @@ fun PermissionScreen(
     val granularPermissions = remember { PermissionHelper.granularMediaPermissions() }
     val granularState = rememberMultiplePermissionsState(permissions = granularPermissions)
 
-    // Auto-request granular permissions on first composition if All-Files not available
+    // Auto-request granular permissions only on Android 10 and below (API ≤ 29).
+    // On Android 11+ (API 30+) we prefer the MANAGE_EXTERNAL_STORAGE "All files
+    // access" flow — don't auto-prompt for READ_MEDIA_VIDEO, which on some ROMs
+    // shows a combined "Photos & Videos" dialog that confuses users.
+    // Granular access is only requested when the user explicitly taps
+    // "Use Limited Access" in AllFilesPermissionUI.
     LaunchedEffect(Unit) {
-        if (!allFilesGranted && !granularState.allPermissionsGranted) {
+        if (!allFilesGranted && !granularState.allPermissionsGranted && !needsAllFiles) {
             granularState.launchMultiplePermissionRequest()
         }
     }

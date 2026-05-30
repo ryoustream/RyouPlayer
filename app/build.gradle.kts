@@ -31,7 +31,8 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 //          004 = all-files access + pull-to-refresh + splash icon fix,
 //          005 = pull-refresh rework + permission lifecycle fix + .nomedia fs-scan + version sync
 //          006 = rm READ_MEDIA_AUDIO, nomedia default off, instant next/prev, black-screen fix, keystore fix
-val versionNameMinor: Int = 6
+//          007 = video-info scroll, gesture/controls fix, title fix, notif title, perm cleanup, apk size -~1.2MB
+val versionNameMinor: Int = 7
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066
@@ -296,19 +297,11 @@ dependencies {
     // DataStore
     implementation(libs.datastore.preferences)
 
-    // Network
-    implementation(libs.retrofit.core)
-    implementation(libs.retrofit.gson)
-    implementation(libs.okhttp.core)
-    implementation(libs.okhttp.logging)
-    implementation(libs.gson)
-
-    // Coil
+    // Coil — image loading + video thumbnail extraction
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
 
-    // Accompanist
-    implementation(libs.accompanist.systemuicontroller)
+    // Accompanist — permissions helper only; systemuicontroller unused → removed
     implementation(libs.accompanist.permissions)
 
     // Cast

@@ -55,7 +55,8 @@ class RyouPlaybackService : Service() {
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
 
-    // ── Noisy receiver (headset unplug) ───────────────────────────────────────
+    // ── State ──────────────────────────────────────────────────────────────────
+    private var currentTitle: String = ""
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
@@ -86,6 +87,8 @@ class RyouPlaybackService : Service() {
             ACTION_STOP  -> { mpvPause(true); abandonAudioFocus(); stopSelf() }
             ACTION_UPDATE_STATE -> {
                 val playing = intent.getBooleanExtra(EXTRA_IS_PLAYING, false)
+                val title   = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+                if (title.isNotEmpty()) currentTitle = title
                 updateNotification(playing)
             }
         }
@@ -177,7 +180,7 @@ class RyouPlaybackService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Ryou Player")
+            .setContentTitle(currentTitle.ifEmpty { "Ryou Player" })
             .setContentText(if (isPlaying) "Playing" else "Paused")
             .setContentIntent(launchIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -311,6 +314,7 @@ class RyouPlaybackService : Service() {
         const val ACTION_PREV         = "com.ryoustream.player.PREV"
         const val ACTION_UPDATE_STATE = "com.ryoustream.player.UPDATE_STATE"
         const val EXTRA_IS_PLAYING    = "is_playing"
+        const val EXTRA_TITLE         = "media_title"
 
         fun start(context: Context) =
             ContextCompat.startForegroundService(
@@ -318,12 +322,13 @@ class RyouPlaybackService : Service() {
                 Intent(context, RyouPlaybackService::class.java),
             )
 
-        fun notifyPlaying(context: Context, isPlaying: Boolean) =
+        fun notifyPlaying(context: Context, isPlaying: Boolean, title: String = "") =
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, RyouPlaybackService::class.java).apply {
                     action = ACTION_UPDATE_STATE
                     putExtra(EXTRA_IS_PLAYING, isPlaying)
+                    if (title.isNotEmpty()) putExtra(EXTRA_TITLE, title)
                 },
             )
     }

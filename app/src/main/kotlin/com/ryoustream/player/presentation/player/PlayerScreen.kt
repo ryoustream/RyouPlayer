@@ -31,6 +31,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Dialog
@@ -162,8 +164,10 @@ fun PlayerScreen(
                 )
             }
             // ── Horizontal drag = seek ───────────────────────────────────
-            .pointerInput(state.isLocked) {
-                if (state.isLocked) return@pointerInput
+            // Disabled while controls are visible so the seek slider and
+            // other controls receive touch events without competition.
+            .pointerInput(state.isLocked, state.showControls) {
+                if (state.isLocked || state.showControls) return@pointerInput
                 val edgePx = 56f * pixelDensity
                 detectHorizontalDragGestures(
                     onDragStart = { off ->
@@ -183,8 +187,9 @@ fun PlayerScreen(
                 )
             }
             // ── Vertical drag = brightness (left) / volume (right) ───────
-            .pointerInput(state.isLocked) {
-                if (state.isLocked) return@pointerInput
+            // Also disabled while controls are visible.
+            .pointerInput(state.isLocked, state.showControls) {
+                if (state.isLocked || state.showControls) return@pointerInput
                 val edgePx = 56f * pixelDensity
                 detectVerticalDragGestures(
                     onDragStart = { off ->
@@ -739,13 +744,20 @@ private fun VideoInfoSheet(state: PlayerUiState, onDismiss: () -> Unit) {
             Surface(
                 modifier        = Modifier
                     .width(300.dp)
+                    // Cap height so the sheet never overflows; verticalScroll
+                    // lets the user scroll through all rows.
+                    .heightIn(max = 480.dp)
                     .padding(bottom = 72.dp, end = 8.dp),
                 shape           = RoundedCornerShape(16.dp),
                 tonalElevation  = 8.dp,
                 shadowElevation = 8.dp,
                 color           = MaterialTheme.colorScheme.surface,
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Column(
+                    Modifier
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -760,7 +772,7 @@ private fun VideoInfoSheet(state: PlayerUiState, onDismiss: () -> Unit) {
                     if (state.videoInfo.isEmpty()) {
                         Text(
                             "Loading…",
-                            style = MaterialTheme.typography.bodySmall,
+                            style    = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(vertical = 8.dp),
                         )
                     } else {
@@ -779,7 +791,7 @@ private fun VideoInfoSheet(state: PlayerUiState, onDismiss: () -> Unit) {
                                     value,
                                     style    = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.weight(1f),
-                                    maxLines = 2,
+                                    maxLines = 3,
                                 )
                             }
                         }
