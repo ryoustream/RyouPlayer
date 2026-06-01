@@ -92,7 +92,27 @@ class RyouPlaybackService : Service() {
                 updateNotification(playing)
             }
         }
-        return START_STICKY
+        // START_NOT_STICKY: do NOT restart service after it is killed.
+        // START_STICKY caused Android to restart the service after swipe-from-recents,
+        // which kept the media notification alive even after the user closed the app.
+        return START_NOT_STICKY
+    }
+
+    /**
+     * Called when user swipes the app away from the Recents screen.
+     * We stop playback, remove the foreground notification, and shut down immediately.
+     * This guarantees media controls disappear the moment the app is closed from recents.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Pause mpv and release audio focus before tearing down
+        if (MPVLib.isInitialized.get()) {
+            runCatching { MPVLib.setPropertyBoolean("pause", true) }
+        }
+        abandonAudioFocus()
+        // Remove the notification now — don't wait for onDestroy
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

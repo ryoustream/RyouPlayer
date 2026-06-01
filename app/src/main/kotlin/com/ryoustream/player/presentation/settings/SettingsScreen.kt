@@ -1,5 +1,7 @@
 package com.ryoustream.player.presentation.settings
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,10 +25,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.ryoustream.player.BuildConfig
 import com.ryoustream.player.domain.repository.SettingsRepository
+import com.ryoustream.player.util.AppUpdateChecker
+import com.ryoustream.player.util.UpdateInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+// ─── Update Check State ───────────────────────────────────────────────────────
+
+data class UpdateCheckState(
+    val isChecking: Boolean     = false,
+    val result: UpdateInfo?     = null,
+    val error: String?          = null,
+    /** True once a check has been attempted (success or failure). */
+    val checked: Boolean        = false,
+)
 
 // ─── ViewModel ────────────────────────────────────────────────────────────────
 
@@ -54,6 +69,8 @@ data class SettingsUiState(
     val codecPreference: String = "AUTO",
     val showHiddenFiles: Boolean = false,
     val ignoreNomedia: Boolean = false,
+    // Update
+    val updateCheck: UpdateCheckState = UpdateCheckState(),
 )
 
 @HiltViewModel
@@ -148,6 +165,29 @@ class SettingsViewModel @Inject constructor(
     fun setAnimations(v: Boolean) = viewModelScope.launch { settingsRepository.setAnimationsEnabled(v) }
     fun setIgnoreNotch(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNotch(v) }
     fun setShowHiddenFiles(v: Boolean) = viewModelScope.launch { settingsRepository.setShowHiddenFiles(v) }
+
+    fun checkForUpdate() {
+        if (_uiState.value.updateCheck.isChecking) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(updateCheck = UpdateCheckState(isChecking = true)) }
+            AppUpdateChecker.checkForUpdate(BuildConfig.VERSION_FULL).fold(
+                onSuccess = { info ->
+                    _uiState.update { it.copy(updateCheck = UpdateCheckState(
+                        isChecking = false,
+                        result     = info,
+                        checked    = true,
+                    ))}
+                },
+                onFailure = { _ ->
+                    _uiState.update { it.copy(updateCheck = UpdateCheckState(
+                        isChecking = false,
+                        error      = "Gagal memeriksa pembaruan. Periksa koneksi internet.",
+                        checked    = true,
+                    ))}
+                },
+            )
+        }
+    }
     fun setIgnoreNomedia(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNomedia(v) }
     fun resetDefaults() = viewModelScope.launch { settingsRepository.resetToDefaults() }
 }
@@ -163,6 +203,8 @@ fun SettingsScreen(
     val s by viewModel.uiState.collectAsStateWithLifecycle()
     var showResetDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -352,7 +394,49 @@ fun SettingsScreen(
                     },
                 )
             }
-        }
+            item {
+                val uc = s.updateCheck
+                ListItem(
+                    headlineContent = { Text("Periksa Pembaruan") },
+                    supportingContent = {
+                        when {
+                            uc.isChecking -> Text("Memeriksa…")
+                            uc.error != null -> Text(uc.error, color = MaterialTheme.colorScheme.error)
+                            uc.result != null && uc.result.hasUpdate ->
+                                Text("Pembaruan tersedia: v${uc.result.latestVersion}",
+                                    color = MaterialTheme.colorScheme.primary)
+                            uc.result != null ->
+                                Text("Sudah versi terbaru (v${uc.result.currentVersion})")
+                            else -> Text("Ketuk untuk memeriksa pembaruan")
+                        }
+                    },
+                    leadingContent = {
+                        if (uc.isChecking) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (uc.result?.hasUpdate == true)
+                                    Icons.Default.SystemUpdate
+                                else
+                                    Icons.Default.Sync,
+                                contentDescription = null,
+                                tint = if (uc.result?.hasUpdate == true)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                    modifier = Modifier.clickable(enabled = !uc.isChecking) {
+                        viewModel.checkForUpdate()
+                        showUpdateDialog = true
+                    },
+                )
+            }
+        } // end LazyColumn
 
         // Theme dialog
         if (showThemeDialog) {
@@ -404,6 +488,54 @@ fun SettingsScreen(
                 dismissButton = {
                     TextButton(onClick = { showResetDialog = false }) { Text("Cancel") }
                 },
+            )
+        }
+
+        // Update dialog
+        if (showUpdateDialog) {
+            val uc = s.updateCheck
+            AlertDialog(
+                onDismissRequest = { showUpdateDialog = false },
+                icon = {
+                    when {
+                        uc.isChecking -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        uc.result?.hasUpdate == true -> Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        else -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                    }
+                },
+                title = {
+                    Text(when {
+                        uc.isChecking            -> "Memeriksa Pembaruan…"
+                        uc.result?.hasUpdate == true -> "Pembaruan Tersedia"
+                        uc.error != null         -> "Gagal Memeriksa"
+                        uc.result != null        -> "Sudah Terbaru"
+                        else                     -> "Memeriksa Pembaruan…"
+                    })
+                },
+                text = {
+                    when {
+                        uc.isChecking -> Text("Sedang memeriksa versi terbaru di GitHub…")
+                        uc.error != null -> Text(uc.error)
+                        uc.result != null && uc.result.hasUpdate ->
+                            Text("Versi ${uc.result.latestVersion} tersedia.\nVersi terpasang: ${uc.result.currentVersion}")
+                        uc.result != null ->
+                            Text("RyouPlayer ${uc.result.currentVersion} sudah versi terbaru.")
+                        else -> Text("Sedang memeriksa…")
+                    }
+                },
+                confirmButton = {
+                    if (uc.result?.hasUpdate == true) {
+                        TextButton(onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uc.result.releasePageUrl)))
+                            showUpdateDialog = false
+                        }) { Text("Unduh") }
+                    } else if (!uc.isChecking) {
+                        TextButton(onClick = { showUpdateDialog = false }) { Text("OK") }
+                    }
+                },
+                dismissButton = if (uc.result?.hasUpdate == true) ({
+                    TextButton(onClick = { showUpdateDialog = false }) { Text("Nanti") }
+                }) else null,
             )
         }
     }

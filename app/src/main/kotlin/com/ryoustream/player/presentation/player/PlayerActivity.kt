@@ -16,14 +16,15 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.view.WindowCompat
 import com.ryoustream.player.domain.repository.SettingsRepository
 import com.ryoustream.player.presentation.theme.RyouPlayerTheme
+import com.ryoustream.player.service.RyouPlaybackService
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
@@ -45,15 +46,20 @@ class PlayerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         // ── 1. Display cutout — read user preference ─────────────────────────────
-        //    SHORT_EDGES = extend video behind notch (default on).
+        //    SHORT_EDGES = extend video behind notch.
         //    NEVER = keep content away from notch (safe for hole-punch devices).
+        //
+        //    MUST be read SYNCHRONOUSLY (runBlocking) so the correct value is applied
+        //    before setContent. A coroutine/LaunchedEffect causes a race condition:
+        //    setContent renders before the window attribute is applied, so the system
+        //    default (NEVER) wins regardless of the user's saved preference.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val ignoreNotch = runBlocking { settingsRepository.ignoreNotch.first() }
+            applyNotchMode(ignoreNotch)
+            // Also react to live changes if user navigates to Settings and back
             lifecycleScope.launch {
-                settingsRepository.ignoreNotch.collect { ignore ->
-                    applyNotchMode(ignore)
-                }
+                settingsRepository.ignoreNotch.collect { ignore -> applyNotchMode(ignore) }
             }
-            applyNotchMode(true) // default to SHORT_EDGES before pref loads
         }
 
         // ── 2. Edge-to-edge (status + nav bars transparent) ─────────────────────
@@ -108,6 +114,14 @@ class PlayerActivity : ComponentActivity() {
     }
 
     // ── PiP ──────────────────────────────────────────────────────────────────
+
+    override fun onDestroy() {
+        // Stop the foreground service when the player activity is fully destroyed
+        // (back press, finish(), or system kill). This removes the media notification
+        // immediately. ViewModel.onCleared() handles the MPV teardown.
+        stopService(Intent(this, RyouPlaybackService::class.java))
+        super.onDestroy()
+    }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()

@@ -163,10 +163,13 @@
 
         <!-- ═══ PLAYBACK SERVICE ═══════════════════════════════ -->
         <!-- Plain foreground service for mpv: audio focus + notification.
-             ExoPlayer / DefaultTrackSelector removed — mpv is the engine. -->
+             ExoPlayer / DefaultTrackSelector removed — mpv is the engine.
+             stopWithTask=true: automatically stopped when the user removes the
+             app task from Recents, so the media notification disappears immediately. -->
         <service
             android:name=".service.RyouPlaybackService"
             android:exported="false"
+            android:stopWithTask="true"
             android:foregroundServiceType="mediaPlayback" />
 
         <!-- Media Scanner Service -->
