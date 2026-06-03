@@ -371,3 +371,157 @@ fun VideoCardShimmer(modifier: Modifier = Modifier) {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VideoCardYouTube — full-width card gaya YouTube untuk Home feed
+// ─────────────────────────────────────────────────────────────────────────────
+
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import coil.request.ImageRequest
+import coil.size.Size
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun VideoCardYouTube(
+    item: MediaItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    onMoreClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+    ) {
+        // ── Thumbnail 16:9 ───────────────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f),
+        ) {
+            val context = LocalContext.current
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(item.thumbnailUri ?: item.uri)
+                    .crossfade(200)
+                    .size(Size.ORIGINAL)
+                    .build(),
+                contentDescription = item.displayName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            // Gradient bawah
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.3f)),
+                        startY = 100f,
+                    )
+                )
+            )
+
+            // Badge durasi
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp),
+                shape = RoundedCornerShape(4.dp),
+                color = Color.Black.copy(alpha = 0.75f),
+            ) {
+                Text(
+                    text = item.durationFormatted,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                )
+            }
+
+            // Progress bar jika sedang dalam progress
+            if (item.lastPlayedPosition > 0) {
+                LinearProgressIndicator(
+                    progress = { item.watchProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .align(Alignment.BottomCenter),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.White.copy(alpha = 0.3f),
+                )
+            }
+        }
+
+        // ── Info row ─────────────────────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            // Folder avatar (mirip channel avatar YouTube)
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.Folder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // Judul + metadata
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = buildYoutubeMetadata(item),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            // More options
+            IconButton(
+                onClick = onMoreClick,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Opsi",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun buildYoutubeMetadata(item: MediaItem): String = buildString {
+    if (item.folderName.isNotBlank()) append(item.folderName)
+    if (item.resolution != VideoResolution.UNKNOWN) {
+        if (isNotEmpty()) append(" • ")
+        append(item.resolution.label)
+    }
+    if (item.size > 0) {
+        if (isNotEmpty()) append(" • ")
+        append(item.fileSizeFormatted)
+    }
+}

@@ -20,13 +20,11 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-// Tab 0 = Folder, Tab 1 = All, Tab 2 = Recent, Tab 3 = Stream, Tab 4 = Playlist
-enum class HomeTab(val label: String) {
-    FOLDERS("Folder"),
-    ALL("All"),
-    RECENT("Recent"),
-    STREAM("Stream"),
-    PLAYLIST("Playlist"),
+enum class HomeFilter(val label: String) {
+    ALL("Semua"),
+    RECENT("Terbaru"),
+    FAVORITES("Favorit"),
+    IN_PROGRESS("Lanjutkan"),
 }
 
 data class HomeUiState(
@@ -38,11 +36,10 @@ data class HomeUiState(
     val streams: List<NetworkStream> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
     val searchQuery: String = "",
-    // Default: A-Z by name, Folder tab shown first
     val sortOrder: MediaSortOrder = MediaSortOrder.NAME_ASC,
     val viewMode: ViewMode = ViewMode.GRID,
     val folderViewMode: ViewMode = ViewMode.GRID,
-    val selectedTab: HomeTab = HomeTab.FOLDERS,
+    val activeFilter: HomeFilter = HomeFilter.ALL,
     // Stream dialog
     val showAddStreamDialog: Boolean = false,
     val streamDialogUrl: String = "",
@@ -51,7 +48,18 @@ data class HomeUiState(
     val showCreatePlaylistDialog: Boolean = false,
     val newPlaylistName: String = "",
     val error: String? = null,
-)
+) {
+    val inProgressVideos: List<MediaItem>
+        get() = videos.filter { it.isInProgress }
+
+    val filteredVideos: List<MediaItem>
+        get() = when (activeFilter) {
+            HomeFilter.ALL         -> videos
+            HomeFilter.RECENT      -> recentVideos
+            HomeFilter.FAVORITES   -> videos.filter { it.isFavorite }
+            HomeFilter.IN_PROGRESS -> videos.filter { it.isInProgress }
+        }
+}
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -172,8 +180,8 @@ class HomeViewModel @Inject constructor(
         _refreshKey.value = System.currentTimeMillis()
     }
 
-    fun onTabSelected(tab: HomeTab) {
-        _uiState.update { it.copy(selectedTab = tab) }
+    fun onFilterSelected(filter: HomeFilter) {
+        _uiState.update { it.copy(activeFilter = filter) }
     }
 
     fun onViewModeToggle() {

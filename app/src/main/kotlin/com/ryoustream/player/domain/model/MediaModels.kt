@@ -55,6 +55,18 @@ data class MediaItem(
     val hasMultipleAudioTracks: Boolean
         get() = audioTracks.size > 1
 
+    // Progress playback (0.0 – 1.0)
+    val watchProgress: Float
+        get() = if (duration > 0L) lastPlayedPosition.toFloat() / duration.toFloat() else 0f
+
+    // True jika video sudah mulai tapi belum selesai (5% – 95%)
+    val isInProgress: Boolean
+        get() = watchProgress > 0.05f && watchProgress < 0.95f
+
+    // Alias deskriptif untuk sizeFormatted
+    val fileSizeFormatted: String
+        get() = sizeFormatted
+
     companion object {
         fun formatDuration(ms: Long): String {
             val totalSeconds = ms / 1000

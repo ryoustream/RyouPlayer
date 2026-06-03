@@ -18,7 +18,7 @@ plugins {
 val buildDate: String = SimpleDateFormat("yyyyMMdd").format(Date())
 val buildTime: String = SimpleDateFormat("HHmm").format(Date())
 val META_VERSION = 1   // always 1 — identifies RyouPlayer
-val versionMajor = 2   // major release (maps to "2" in v1.2.x)
+val versionMajor = 3   // major release (maps to "3" in v1.3.x)
 
 // BUILD_NUMBER from CI (GitHub Actions run_number).
 // This is the "patch / build" counter used in versionCode.
@@ -27,13 +27,9 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 
 // versionNameMinor — bump manually on every feature/fix release.
 // Rule: reset to 1 on versionMajor bump, then increment by 1 per release.
-// History: 001 = initial 1.2, 002 = audio panel, 003 = hidden-file/audio-delay fix,
-//          004 = all-files access + pull-to-refresh + splash icon fix,
-//          005 = pull-refresh rework + permission lifecycle fix + .nomedia fs-scan + version sync
-//          006 = rm READ_MEDIA_AUDIO, nomedia default off, instant next/prev, black-screen fix, keystore fix
-//          007 = video-info scroll, gesture/controls fix, title fix, notif title, perm cleanup, apk size -~1.2MB
-//          008 = folder list/grid toggle, build# sync fix, keystore update
-val versionNameMinor: Int = 8
+// History (v1.3.x):
+//   001 = YouTube-style UI rombak, About screen, bottom nav, home feed, FolderScreen mandiri
+val versionNameMinor: Int = 1
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066

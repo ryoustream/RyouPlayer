@@ -2,31 +2,45 @@ package com.ryoustream.player.presentation.navigation
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
-import com.ryoustream.player.domain.model.NetworkStream
+import com.ryoustream.player.domain.model.MediaFolder
+import com.ryoustream.player.presentation.about.AboutScreen
+import com.ryoustream.player.presentation.components.BottomNavDest
+import com.ryoustream.player.presentation.components.RyouBottomNavBar
+import com.ryoustream.player.presentation.components.bottomNavRoutes
+import com.ryoustream.player.presentation.folder.FolderScreen
 import com.ryoustream.player.presentation.home.HomeScreen
+import com.ryoustream.player.presentation.home.HomeViewModel
 import com.ryoustream.player.presentation.library.LibraryScreen
 import com.ryoustream.player.presentation.player.PlayerActivity
 import com.ryoustream.player.presentation.settings.SettingsScreen
+import com.ryoustream.player.presentation.you.YouScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-/**
- * Navigation routes for Ryou Player
- */
 sealed class Screen(val route: String) {
-    object Home : Screen("home")
+    object Home    : Screen("home")
+    object Folders : Screen("folders")
     object Library : Screen("library")
+    object You     : Screen("you")
+    object About   : Screen("about")
     object Settings : Screen("settings")
 
     object Player : Screen("player/{mediaUri}") {
@@ -56,13 +70,8 @@ sealed class Screen(val route: String) {
  * CRITICAL: The player MUST run in PlayerActivity (separate Activity), NOT as an
  * inline composable in MainActivity's NavGraph. Reasons:
  *   1. PlayerActivity sets fullscreen + cutout window flags BEFORE setContent.
- *      These flags cannot be applied retroactively to MainActivity's window.
- *   2. MPVLib.init() is called once per PlayerActivity lifecycle. If PlayerScreen
- *      were inline in the NavGraph, any configuration change (rotation) would
- *      cause MainActivity to recreate → NavGraph rebuild → initializePlayer()
- *      called again on an already-initialized MPV context → native crash.
- *   3. PlayerActivity uses singleTop launchMode, so back→reopen reuses the
- *      same Activity instance and ViewModel, avoiding double-init.
+ *   2. MPVLib.init() is called once per PlayerActivity lifecycle; double-init → crash.
+ *   3. PlayerActivity uses singleTop launchMode to avoid duplicate instances.
  */
 private fun launchPlayer(context: Context, uri: Uri) {
     context.startActivity(
@@ -70,10 +79,6 @@ private fun launchPlayer(context: Context, uri: Uri) {
     )
 }
 
-/**
- * Root navigation graph for Ryou Player.
- * Note: Player routes are handled by launching PlayerActivity, not composable navigation.
- */
 @Composable
 fun RyouNavGraph(
     modifier: Modifier = Modifier,
@@ -82,85 +87,135 @@ fun RyouNavGraph(
     onPlayerRequested: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val navBackStack by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStack?.destination?.route
 
-    NavHost(
-        navController = navController,
-        startDestination = startDestination,
+    val showBottomNav = currentRoute in bottomNavRoutes
+
+    Scaffold(
         modifier = modifier,
-    ) {
-        // ─── Home ──────────────────────────────────────────────────────────────
-        composable(Screen.Home.route) {
-            HomeScreen(
-                onMediaClick = { mediaItem -> launchPlayer(context, mediaItem.uri) },
-                onFolderClick = { folder ->
-                    navController.navigate(Screen.FolderDetail.createRoute(folder.id, folder.name))
-                },
-                onPlaylistClick = { playlist ->
-                    navController.navigate(Screen.PlaylistDetail.createRoute(playlist.id))
-                },
-                onStreamClick = { stream -> launchPlayer(context, Uri.parse(stream.url)) },
-                onSettingsClick = { navController.navigate(Screen.Settings.route) },
-            )
-        }
+        bottomBar = {
+            if (showBottomNav) {
+                RyouBottomNavBar(
+                    currentRoute = currentRoute,
+                    onNavigate = { dest ->
+                        navController.navigate(dest.route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
+            }
+        },
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = if (showBottomNav)
+                Modifier.fillMaxSize().padding(innerPadding)
+            else Modifier.fillMaxSize(),
+        ) {
+            // ─── Home ──────────────────────────────────────────────────────────
+            composable(Screen.Home.route) {
+                HomeScreen(
+                    onMediaClick = { launchPlayer(context, it.uri) },
+                    onYouClick   = { navController.navigate(Screen.You.route) },
+                )
+            }
 
-        // ─── Library ───────────────────────────────────────────────────────────
-        composable(Screen.Library.route) {
-            LibraryScreen(
-                onMediaClick = { mediaItem -> launchPlayer(context, mediaItem.uri) },
-                onPlaylistClick = { playlist ->
-                    navController.navigate(Screen.PlaylistDetail.createRoute(playlist.id))
-                },
-            )
-        }
+            // ─── Folders tab ───────────────────────────────────────────────────
+            composable(Screen.Folders.route) {
+                FoldersTabScreen(
+                    onFolderClick = { folder ->
+                        navController.navigate(Screen.FolderDetail.createRoute(folder.id, folder.name))
+                    },
+                )
+            }
 
-        // ─── Player composable route (kept for deep-link / ACTION_VIEW from
-        //     external apps that resolve to MainActivity) ──────────────────────
-        composable(
-            route = Screen.Player.route,
-            arguments = listOf(navArgument("mediaUri") { type = NavType.StringType }),
-            deepLinks = listOf(navDeepLink { uriPattern = "ryou://player/{mediaUri}" }),
-        ) { backStackEntry ->
-            val encodedUri = backStackEntry.arguments?.getString("mediaUri") ?: ""
-            val decodedUri = URLDecoder.decode(encodedUri, StandardCharsets.UTF_8.toString())
-            // Redirect to PlayerActivity and pop back — we never render inline
-            val uri = Uri.parse(decodedUri)
-            launchPlayer(context, uri)
-            navController.popBackStack()
-        }
+            // ─── Library ───────────────────────────────────────────────────────
+            composable(Screen.Library.route) {
+                LibraryScreen(
+                    onMediaClick    = { launchPlayer(context, it.uri) },
+                    onPlaylistClick = { playlist ->
+                        navController.navigate(Screen.PlaylistDetail.createRoute(playlist.id))
+                    },
+                )
+            }
 
-        // ─── Folder Detail ─────────────────────────────────────────────────────
-        composable(
-            route = Screen.FolderDetail.route,
-            arguments = listOf(
-                navArgument("folderId") { type = NavType.LongType },
-                navArgument("folderName") { type = NavType.StringType },
-            ),
-        ) { backStackEntry ->
-            val folderId = backStackEntry.arguments?.getLong("folderId") ?: 0L
-            val folderName = URLDecoder.decode(
-                backStackEntry.arguments?.getString("folderName") ?: "",
-                StandardCharsets.UTF_8.toString(),
-            )
-            HomeScreen(
-                folderId    = folderId,
-                folderTitle = folderName,
-                onMediaClick = { mediaItem -> launchPlayer(context, mediaItem.uri) },
-                onFolderClick = {},
-                onPlaylistClick = { playlist ->
-                    navController.navigate(Screen.PlaylistDetail.createRoute(playlist.id))
-                },
-                onStreamClick = { stream -> launchPlayer(context, Uri.parse(stream.url)) },
-                onSettingsClick = { navController.navigate(Screen.Settings.route) },
-                onBack = { navController.popBackStack() },
-            )
-        }
+            // ─── You ───────────────────────────────────────────────────────────
+            composable(Screen.You.route) {
+                YouScreen(
+                    onNavigateSettings = { navController.navigate(Screen.Settings.route) },
+                    onNavigateAbout    = { navController.navigate(Screen.About.route) },
+                )
+            }
 
-        // ─── Settings ─────────────────────────────────────────────────────────
-        composable(Screen.Settings.route) {
-            SettingsScreen(onBack = { navController.popBackStack() })
-        }
+            // ─── About ────────────────────────────────────────────────────────
+            composable(Screen.About.route) {
+                AboutScreen(onBack = { navController.popBackStack() })
+            }
 
-        // ─── Stream Input ──────────────────────────────────────────────────────
-        composable(Screen.StreamInput.route) { }
+            // ─── Player (deep-link) ────────────────────────────────────────────
+            composable(
+                route = Screen.Player.route,
+                arguments = listOf(navArgument("mediaUri") { type = NavType.StringType }),
+                deepLinks = listOf(navDeepLink { uriPattern = "ryou://player/{mediaUri}" }),
+            ) { backStackEntry ->
+                val encodedUri = backStackEntry.arguments?.getString("mediaUri") ?: ""
+                val decodedUri = URLDecoder.decode(encodedUri, StandardCharsets.UTF_8.toString())
+                launchPlayer(context, Uri.parse(decodedUri))
+                navController.popBackStack()
+            }
+
+            // ─── Folder Detail ─────────────────────────────────────────────────
+            composable(
+                route = Screen.FolderDetail.route,
+                arguments = listOf(
+                    navArgument("folderId")   { type = NavType.LongType },
+                    navArgument("folderName") { type = NavType.StringType },
+                ),
+            ) { backStackEntry ->
+                val folderId   = backStackEntry.arguments?.getLong("folderId") ?: 0L
+                val folderName = URLDecoder.decode(
+                    backStackEntry.arguments?.getString("folderName") ?: "",
+                    StandardCharsets.UTF_8.toString(),
+                )
+                FolderScreen(
+                    folderName   = folderName,
+                    onMediaClick = { launchPlayer(context, it.uri) },
+                    onBack       = { navController.popBackStack() },
+                )
+            }
+
+            // ─── Settings ─────────────────────────────────────────────────────
+            composable(Screen.Settings.route) {
+                SettingsScreen(onBack = { navController.popBackStack() })
+            }
+
+            // ─── Stream Input ──────────────────────────────────────────────────
+            composable(Screen.StreamInput.route) { }
+        }
     }
+}
+
+// ── Folders tab screen — menggunakan HomeViewModel untuk data folder ───────────
+
+@Composable
+private fun FoldersTabScreen(
+    onFolderClick: (MediaFolder) -> Unit,
+    viewModel: HomeViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    com.ryoustream.player.presentation.home.FoldersBrowserScreen(
+        folders        = uiState.folders,
+        isLoading      = uiState.isLoading,
+        folderViewMode = uiState.folderViewMode,
+        onFolderClick  = onFolderClick,
+        onViewModeToggle = viewModel::onFolderViewModeToggle,
+        onRescan       = viewModel::onRescanMedia,
+    )
 }
