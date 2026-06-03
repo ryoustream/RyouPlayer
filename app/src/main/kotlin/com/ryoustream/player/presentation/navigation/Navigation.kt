@@ -205,7 +205,10 @@ fun RyouNavGraph(
 
             // ─── Settings ─────────────────────────────────────────────────────
             composable(Screen.Settings.route) {
-                SettingsScreen(onBack = { navController.popBackStack() })
+                SettingsScreen(
+                    onBack       = { navController.popBackStack() },
+                    onAboutClick = { navController.navigate(Screen.About.route) },
+                )
             }
 
             // ─── Stream Input ──────────────────────────────────────────────────

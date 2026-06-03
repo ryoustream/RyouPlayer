@@ -29,7 +29,9 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 // Rule: reset to 1 on versionMajor bump, then increment by 1 per release.
 // History (v1.3.x):
 //   001 = YouTube-style UI rombak, About screen, bottom nav, home feed, FolderScreen mandiri
-val versionNameMinor: Int = 1
+//   101 = Player UI YouTube-style (MoreVert, ModalBottomSheet panels, QueuePanel),
+//         Settings revamp (label Indonesia, ValueSetting), 10 bug fixes
+val versionNameMinor: Int = 101
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066

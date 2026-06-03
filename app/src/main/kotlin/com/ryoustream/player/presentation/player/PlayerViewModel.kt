@@ -88,6 +88,10 @@ data class PlayerUiState(
     val showSubtitlePanel: Boolean           = false,
     val showAudioPanel: Boolean              = false,
     val showSubtitleStyleSheet: Boolean      = false,
+    // Queue panel
+    val showQueuePanel: Boolean              = false,
+    val queueItems: List<Uri>               = emptyList(),
+    val currentQueueIndex: Int              = 0,
     // Metadata
     val chapterMarks: List<Pair<Long, String>> = emptyList(),
     val mediaTitle: String                   = "",
@@ -246,6 +250,9 @@ class PlayerViewModel @Inject constructor(
                 ?: 0
             _folderIndex = idx
 
+            // Sync queue state
+            _state.update { it.copy(queueItems = folderUris, currentQueueIndex = idx) }
+
             _loadAtIndex(idx, uri, startPosition)
         }
     }
@@ -258,6 +265,7 @@ class PlayerViewModel @Inject constructor(
     private fun playAtIndex(idx: Int) {
         val uri = _folderFiles.getOrNull(idx) ?: return
         _folderIndex = idx
+        _state.update { it.copy(currentQueueIndex = idx) }
         viewModelScope.launch { _loadAtIndex(idx, uri, 0L, skipDbLookup = true) }
     }
 
@@ -775,8 +783,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun setSubtitleDelay(delayMs: Long) {
-        if (MPVLib.isInitialized.get())
-            MPVLib.setPropertyDouble("sub-delay", delayMs / 1000.0)
+        if (MPVLib.isInitialized.get()) {
+            // B3: use setPropertyLong for zero to ensure mpv clears the delay cleanly
+            if (delayMs == 0L) MPVLib.setPropertyLong("sub-delay", 0)
+            else MPVLib.setPropertyDouble("sub-delay", delayMs / 1000.0)
+        }
         _state.update { it.copy(subtitleDelay = delayMs) }
     }
 
@@ -863,7 +874,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun cycleAspectRatio() {
-        val modes   = AspectRatioMode.values()
+        val modes   = AspectRatioMode.entries
         val current = _state.value.aspectRatioMode
         val next    = modes[(modes.indexOf(current) + 1) % modes.size]
         val ratio = when (next) {
@@ -908,6 +919,20 @@ class PlayerViewModel @Inject constructor(
     fun hideAudioPanel()         { _state.update { it.copy(showAudioPanel = false) }; scheduleHideControls() }
     fun showSubtitleStyleSheet() { _state.update { it.copy(showSubtitleStyleSheet = true) } }
     fun hideSubtitleStyleSheet() { _state.update { it.copy(showSubtitleStyleSheet = false) } }
+    fun showQueuePanel()         { _state.update { it.copy(showQueuePanel = true, showControls = true) } }
+    fun hideQueuePanel()         { _state.update { it.copy(showQueuePanel = false) }; scheduleHideControls() }
+
+    /** Jump to a specific queue index. B10: update hasPrev/hasNext after jump. */
+    fun jumpToQueue(idx: Int) {
+        if (idx < 0 || idx >= _folderFiles.size) return
+        _state.update { it.copy(
+            showQueuePanel = false,
+            hasPrev        = idx > 0,
+            hasNext        = idx < _folderFiles.lastIndex,
+            currentQueueIndex = idx,
+        )}
+        playAtIndex(idx)
+    }
 
     // ─── Position tracking ────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ package com.ryoustream.player.presentation.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -38,7 +40,6 @@ data class UpdateCheckState(
     val isChecking: Boolean     = false,
     val result: UpdateInfo?     = null,
     val error: String?          = null,
-    /** True once a check has been attempted (success or failure). */
     val checked: Boolean        = false,
 )
 
@@ -165,6 +166,8 @@ class SettingsViewModel @Inject constructor(
     fun setAnimations(v: Boolean) = viewModelScope.launch { settingsRepository.setAnimationsEnabled(v) }
     fun setIgnoreNotch(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNotch(v) }
     fun setShowHiddenFiles(v: Boolean) = viewModelScope.launch { settingsRepository.setShowHiddenFiles(v) }
+    fun setIgnoreNomedia(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNomedia(v) }
+    fun resetDefaults() = viewModelScope.launch { settingsRepository.resetToDefaults() }
 
     fun checkForUpdate() {
         if (_uiState.value.updateCheck.isChecking) return
@@ -188,8 +191,6 @@ class SettingsViewModel @Inject constructor(
             )
         }
     }
-    fun setIgnoreNomedia(v: Boolean) = viewModelScope.launch { settingsRepository.setIgnoreNomedia(v) }
-    fun resetDefaults() = viewModelScope.launch { settingsRepository.resetToDefaults() }
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -198,21 +199,26 @@ class SettingsViewModel @Inject constructor(
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onAboutClick: () -> Unit = {},       // B5: navigate ke AboutScreen
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val s by viewModel.uiState.collectAsStateWithLifecycle()
-    var showResetDialog by remember { mutableStateOf(false) }
-    var showThemeDialog by remember { mutableStateOf(false) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showResetDialog      by remember { mutableStateOf(false) }
+    var showThemeDialog      by remember { mutableStateOf(false) }
+    var showUpdateDialog     by remember { mutableStateOf(false) }
+    var showSpeedDialog      by remember { mutableStateOf(false) }
+    var showDoubleTapDialog  by remember { mutableStateOf(false) }
+    var showFontSizeDialog   by remember { mutableStateOf(false) }
+    var showCodecDialog      by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text("Pengaturan") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali")
                     }
                 },
             )
@@ -223,61 +229,91 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 32.dp),
         ) {
 
-            // ── PLAYBACK ──────────────────────────────────────────────────────
-            item { SectionHeader("Playback") }
+            // ── PEMUTARAN ─────────────────────────────────────────────────────
+            item { SectionHeader("Pemutaran") }
             item {
                 SwitchSetting(
                     icon = Icons.Default.Memory,
                     title = "Hardware Decoding",
-                    subtitle = "Use GPU for video decoding (recommended)",
+                    subtitle = "Gunakan GPU untuk decode video (disarankan)",
                     checked = s.hardwareDecoding,
                     onCheckedChange = viewModel::setHardwareDecoding,
                 )
             }
             item {
                 SwitchSetting(
-                    icon = Icons.Default.Subtitles,
-                    title = "Subtitles",
-                    subtitle = "Enable subtitle display by default",
-                    checked = s.subtitleEnabled,
-                    onCheckedChange = viewModel::setSubtitleEnabled,
-                )
-            }
-            item {
-                SwitchSetting(
                     icon = Icons.Default.History,
-                    title = "Remember Position",
-                    subtitle = "Resume videos from where you left off",
+                    title = "Ingat Posisi",
+                    subtitle = "Lanjutkan dari posisi terakhir",
                     checked = s.rememberPosition,
                     onCheckedChange = viewModel::setRememberPosition,
                 )
             }
             item {
-                SwitchSetting(
-                    icon = Icons.Default.PictureInPictureAlt,
-                    title = "Picture-in-Picture",
-                    subtitle = "Float player when leaving the app",
-                    checked = s.pipEnabled,
-                    onCheckedChange = viewModel::setPipEnabled,
+                ValueSetting(
+                    icon    = Icons.Default.Speed,
+                    title   = "Kecepatan Default",
+                    value   = "${s.defaultSpeed}×",
+                    subtitle = "Kecepatan putar awal saat membuka video",
+                    onClick = { showSpeedDialog = true },
+                )
+            }
+            item {
+                ValueSetting(
+                    icon    = Icons.Default.TouchApp,
+                    title   = "Detik Double-tap",
+                    value   = "${s.doubleTapSeconds} dtk",
+                    subtitle = "Durasi maju/mundur saat double-tap",
+                    onClick = { showDoubleTapDialog = true },
                 )
             }
             item {
                 SwitchSetting(
                     icon = Icons.Default.MusicNote,
                     title = "Background Playback",
-                    subtitle = "Continue audio when screen is off",
+                    subtitle = "Lanjutkan audio saat layar mati",
                     checked = s.backgroundPlay,
                     onCheckedChange = viewModel::setBackgroundPlay,
                 )
             }
+            item {
+                SwitchSetting(
+                    icon = Icons.Default.PictureInPictureAlt,
+                    title = "Picture-in-Picture",
+                    subtitle = "Tampilkan player kecil saat keluar aplikasi",
+                    checked = s.pipEnabled,
+                    onCheckedChange = viewModel::setPipEnabled,
+                )
+            }
 
-            // ── GESTURES ─────────────────────────────────────────────────────
-            item { SectionHeader("Gestures") }
+            // ── SUBTITLE ──────────────────────────────────────────────────────
+            item { SectionHeader("Subtitle") }
+            item {
+                SwitchSetting(
+                    icon = Icons.Default.Subtitles,
+                    title = "Tampilkan Subtitle",
+                    subtitle = "Aktifkan subtitle secara default",
+                    checked = s.subtitleEnabled,
+                    onCheckedChange = viewModel::setSubtitleEnabled,
+                )
+            }
+            item {
+                ValueSetting(
+                    icon    = Icons.Default.TextFields,
+                    title   = "Ukuran Font Subtitle",
+                    value   = "${s.subtitleFontSize}sp",
+                    subtitle = "Ukuran teks subtitle (10–36sp)",
+                    onClick = { showFontSizeDialog = true },
+                )
+            }
+
+            // ── GERAKAN ───────────────────────────────────────────────────────
+            item { SectionHeader("Gerakan") }
             item {
                 SwitchSetting(
                     icon = Icons.Default.SwipeRight,
-                    title = "Seek Gesture",
-                    subtitle = "Horizontal swipe to seek",
+                    title = "Seek (Geser Horizontal)",
+                    subtitle = "Geser horizontal untuk maju/mundur",
                     checked = s.gestureSeek,
                     onCheckedChange = viewModel::setGestureSeek,
                 )
@@ -285,8 +321,8 @@ fun SettingsScreen(
             item {
                 SwitchSetting(
                     icon = Icons.Default.Brightness6,
-                    title = "Brightness Gesture",
-                    subtitle = "Vertical swipe on left side",
+                    title = "Kecerahan (Geser Kiri)",
+                    subtitle = "Geser vertikal di sisi kiri untuk kecerahan",
                     checked = s.gestureBrightness,
                     onCheckedChange = viewModel::setGestureBrightness,
                 )
@@ -294,24 +330,25 @@ fun SettingsScreen(
             item {
                 SwitchSetting(
                     icon = Icons.AutoMirrored.Filled.VolumeUp,
-                    title = "Volume Gesture",
-                    subtitle = "Vertical swipe on right side",
+                    title = "Volume (Geser Kanan)",
+                    subtitle = "Geser vertikal di sisi kanan untuk volume",
                     checked = s.gestureVolume,
                     onCheckedChange = viewModel::setGestureVolume,
                 )
             }
 
-            // ── APPEARANCE ────────────────────────────────────────────────────
-            item { SectionHeader("Appearance") }
+            // ── TAMPILAN ──────────────────────────────────────────────────────
+            item { SectionHeader("Tampilan") }
             item {
-                ClickableSetting(
-                    icon = Icons.Default.DarkMode,
-                    title = "Theme",
-                    subtitle = when (s.themeMode) {
-                        "DARK" -> "Dark"
-                        "LIGHT" -> "Light"
-                        else -> "Follow system"
+                ValueSetting(
+                    icon    = Icons.Default.DarkMode,
+                    title   = "Tema",
+                    value   = when (s.themeMode) {
+                        "DARK"  -> "Gelap"
+                        "LIGHT" -> "Terang"
+                        else    -> "Sistem"
                     },
+                    subtitle = "Pilih tema tampilan aplikasi",
                     onClick = { showThemeDialog = true },
                 )
             }
@@ -319,7 +356,7 @@ fun SettingsScreen(
                 SwitchSetting(
                     icon = Icons.Default.PhoneAndroid,
                     title = "AMOLED / Pure Black",
-                    subtitle = "True black background in dark mode",
+                    subtitle = "Latar belakang hitam pekat di mode gelap",
                     checked = s.amoledMode,
                     onCheckedChange = viewModel::setAmoledMode,
                     enabled = s.themeMode != "LIGHT",
@@ -328,8 +365,8 @@ fun SettingsScreen(
             item {
                 SwitchSetting(
                     icon = Icons.Default.Palette,
-                    title = "Dynamic Color (Material You)",
-                    subtitle = "Use wallpaper colors (Android 12+)",
+                    title = "Dynamic Color",
+                    subtitle = "Gunakan warna wallpaper (Android 12+)",
                     checked = s.useSystemColor,
                     onCheckedChange = viewModel::setUseSystemColor,
                 )
@@ -337,8 +374,8 @@ fun SettingsScreen(
             item {
                 SwitchSetting(
                     icon = Icons.Default.Bolt,
-                    title = "Animations",
-                    subtitle = "Enable UI transition animations",
+                    title = "Animasi UI",
+                    subtitle = "Aktifkan animasi transisi antarmuka",
                     checked = s.animationsEnabled,
                     onCheckedChange = viewModel::setAnimations,
                 )
@@ -346,19 +383,20 @@ fun SettingsScreen(
             item {
                 SwitchSetting(
                     icon = Icons.Default.Fullscreen,
-                    title = "Ignore Notch / Display Cutout",
-                    subtitle = "Extend video behind notch and hole-punch cameras",
+                    title = "Abaikan Notch",
+                    subtitle = "Perluas video ke area notch dan punch-hole kamera",
                     checked = s.ignoreNotch,
                     onCheckedChange = viewModel::setIgnoreNotch,
                 )
             }
-            // ── ADVANCED ──────────────────────────────────────────────────────
-            item { SectionHeader("Advanced") }
+
+            // ── FILE & MEDIA ──────────────────────────────────────────────────
+            item { SectionHeader("File & Media") }
             item {
                 SwitchSetting(
                     icon = Icons.Default.FolderOpen,
-                    title = "Show Hidden Files",
-                    subtitle = "Include files and folders starting with '.'",
+                    title = "Tampilkan File Tersembunyi",
+                    subtitle = "Tampilkan file dan folder yang diawali '.'",
                     checked = s.showHiddenFiles,
                     onCheckedChange = viewModel::setShowHiddenFiles,
                 )
@@ -366,32 +404,47 @@ fun SettingsScreen(
             item {
                 SwitchSetting(
                     icon = Icons.Default.VisibilityOff,
-                    title = "Ignore .nomedia",
-                    subtitle = "Mark intent to show .nomedia folders (Android limits MediaStore access; files must be re-indexed manually)",
+                    title = "Abaikan .nomedia",
+                    subtitle = "Tampilkan folder .nomedia (perlu re-indeks manual)",
                     checked = s.ignoreNomedia,
                     onCheckedChange = viewModel::setIgnoreNomedia,
+                )
+            }
+
+            // ── LANJUTAN ─────────────────────────────────────────────────────
+            item { SectionHeader("Lanjutan") }
+            item {
+                ValueSetting(
+                    icon    = Icons.Default.Tune,
+                    title   = "Preferensi Codec",
+                    value   = when (s.codecPreference) {
+                        "SOFTWARE" -> "Software"
+                        "HARDWARE" -> "Hardware"
+                        else        -> "Otomatis"
+                    },
+                    subtitle = "Pilihan decoder video",
+                    onClick = { showCodecDialog = true },
                 )
             }
             item {
                 ClickableSetting(
                     icon = Icons.Default.Refresh,
-                    title = "Reset to Defaults",
-                    subtitle = "Restore all settings",
+                    title = "Reset ke Default",
+                    subtitle = "Kembalikan semua pengaturan ke awal",
                     onClick = { showResetDialog = true },
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
 
-            // ── ABOUT ─────────────────────────────────────────────────────────
-            item { SectionHeader("About") }
+            // ── TENTANG ───────────────────────────────────────────────────────
+            item { SectionHeader("Tentang") }
+            // B5: link ke AboutScreen bukan duplikat ListItem versi
             item {
-                ListItem(
-                    headlineContent = { Text("Ryou Player") },
-                    supportingContent = { Text(BuildConfig.VERSION_FULL) },
-                    leadingContent = {
-                        Icon(Icons.Default.Info, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    },
+                ClickableSetting(
+                    icon = Icons.Default.Info,
+                    title = "Tentang Aplikasi",
+                    subtitle = "Versi ${BuildConfig.VERSION_FULL}",
+                    onClick = onAboutClick,
                 )
             }
             item {
@@ -438,14 +491,16 @@ fun SettingsScreen(
             }
         } // end LazyColumn
 
-        // Theme dialog
+        // ── Dialogs ───────────────────────────────────────────────────────────
+
+        // Tema
         if (showThemeDialog) {
             AlertDialog(
                 onDismissRequest = { showThemeDialog = false },
-                title = { Text("Theme") },
+                title = { Text("Tema") },
                 text = {
                     Column {
-                        listOf("SYSTEM" to "Follow system", "LIGHT" to "Light", "DARK" to "Dark")
+                        listOf("SYSTEM" to "Ikuti sistem", "LIGHT" to "Terang", "DARK" to "Gelap")
                             .forEach { (value, label) ->
                                 Row(
                                     Modifier
@@ -468,7 +523,125 @@ fun SettingsScreen(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showThemeDialog = false }) { Text("Close") }
+                    TextButton(onClick = { showThemeDialog = false }) { Text("Tutup") }
+                },
+            )
+        }
+
+        // Kecepatan default
+        if (showSpeedDialog) {
+            val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
+            AlertDialog(
+                onDismissRequest = { showSpeedDialog = false },
+                title = { Text("Kecepatan Default") },
+                text = {
+                    Column {
+                        speeds.forEach { spd ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showSpeedDialog = false }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = s.defaultSpeed == spd,
+                                    onClick  = { showSpeedDialog = false },
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("${spd}×")
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSpeedDialog = false }) { Text("Tutup") }
+                },
+            )
+        }
+
+        // Double-tap seconds
+        if (showDoubleTapDialog) {
+            val options = listOf(5, 10, 15, 20, 30)
+            AlertDialog(
+                onDismissRequest = { showDoubleTapDialog = false },
+                title = { Text("Detik Double-tap") },
+                text = {
+                    Column {
+                        options.forEach { sec ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showDoubleTapDialog = false }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = s.doubleTapSeconds == sec,
+                                    onClick  = { showDoubleTapDialog = false },
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("$sec detik")
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showDoubleTapDialog = false }) { Text("Tutup") }
+                },
+            )
+        }
+
+        // Font size subtitle
+        if (showFontSizeDialog) {
+            AlertDialog(
+                onDismissRequest = { showFontSizeDialog = false },
+                title = { Text("Ukuran Font Subtitle") },
+                text = {
+                    Column {
+                        Text("${s.subtitleFontSize}sp", style = MaterialTheme.typography.labelLarge)
+                        Slider(
+                            value = s.subtitleFontSize.toFloat(),
+                            onValueChange = { },
+                            valueRange = 10f..36f,
+                            steps = 25,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showFontSizeDialog = false }) { Text("OK") }
+                },
+            )
+        }
+
+        // Codec preference
+        if (showCodecDialog) {
+            AlertDialog(
+                onDismissRequest = { showCodecDialog = false },
+                title = { Text("Preferensi Codec") },
+                text = {
+                    Column {
+                        listOf("AUTO" to "Otomatis", "SOFTWARE" to "Software", "HARDWARE" to "Hardware")
+                            .forEach { (value, label) ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showCodecDialog = false }
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = s.codecPreference == value,
+                                        onClick  = { showCodecDialog = false },
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(label)
+                                }
+                            }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showCodecDialog = false }) { Text("Tutup") }
                 },
             )
         }
@@ -477,8 +650,8 @@ fun SettingsScreen(
         if (showResetDialog) {
             AlertDialog(
                 onDismissRequest = { showResetDialog = false },
-                title = { Text("Reset Settings") },
-                text = { Text("All settings will be restored to defaults. This cannot be undone.") },
+                title = { Text("Reset Pengaturan") },
+                text = { Text("Semua pengaturan akan dikembalikan ke default. Tindakan ini tidak dapat dibatalkan.") },
                 confirmButton = {
                     TextButton(
                         onClick = { viewModel.resetDefaults(); showResetDialog = false },
@@ -486,7 +659,7 @@ fun SettingsScreen(
                     ) { Text("Reset") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showResetDialog = false }) { Text("Cancel") }
+                    TextButton(onClick = { showResetDialog = false }) { Text("Batal") }
                 },
             )
         }
@@ -556,7 +729,7 @@ private fun SectionHeader(title: String) {
 
 @Composable
 private fun SwitchSetting(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -580,7 +753,7 @@ private fun SwitchSetting(
 
 @Composable
 private fun ClickableSetting(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     subtitle: String,
     onClick: () -> Unit,
@@ -592,5 +765,46 @@ private fun ClickableSetting(
         leadingContent = { Icon(icon, contentDescription = null, tint = tint) },
         trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
         modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 4.dp),
+    )
+}
+
+/** Section 14: Komponen baru untuk setting yang punya nilai (bukan switch). */
+@Composable
+private fun ValueSetting(
+    icon: ImageVector,
+    title: String,
+    value: String,
+    subtitle: String = "",
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = if (subtitle.isNotBlank()) ({
+            Text(subtitle, style = MaterialTheme.typography.bodySmall)
+        }) else null,
+        leadingContent = {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        trailingContent = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        modifier = Modifier
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 4.dp),
     )
 }

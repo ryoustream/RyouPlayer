@@ -12,6 +12,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,14 +33,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -138,7 +136,7 @@ fun PlayerScreen(
         viewModel.playUri(mediaUri)
     }
 
-    // Capture density before modifier chain (can't use LocalDensity.current inside pointerInput)
+    // Capture density before modifier chain
     val pixelDensity = LocalDensity.current.density
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -152,7 +150,8 @@ fun PlayerScreen(
                     onTap       = { viewModel.toggleControls() },
                     onDoubleTap = { offset ->
                         if (!state.isLocked) {
-                            val edgePx = 56f * pixelDensity
+                            // B7: edge zone = 20% of width
+                            val edgePx = size.width * 0.20f
                             when {
                                 offset.x < edgePx || offset.x > size.width - edgePx -> { /* edge: ignore */ }
                                 offset.x < size.width / 2f -> viewModel.seekBackward(10)
@@ -164,8 +163,6 @@ fun PlayerScreen(
                 )
             }
             // ── Horizontal drag = seek ───────────────────────────────────
-            // Disabled while controls are visible so the seek slider and
-            // other controls receive touch events without competition.
             .pointerInput(state.isLocked, state.showControls) {
                 if (state.isLocked || state.showControls) return@pointerInput
                 val edgePx = 56f * pixelDensity
@@ -187,7 +184,6 @@ fun PlayerScreen(
                 )
             }
             // ── Vertical drag = brightness (left) / volume (right) ───────
-            // Also disabled while controls are visible.
             .pointerInput(state.isLocked, state.showControls) {
                 if (state.isLocked || state.showControls) return@pointerInput
                 val edgePx = 56f * pixelDensity
@@ -212,18 +208,12 @@ fun PlayerScreen(
     ) {
 
         // ── MPV Video Surface ────────────────────────────────────────────────
-        // MPVView is a SurfaceView that wires its Surface to libmpv.
-        // CRITICAL: The key must NOT change between file loads — only change
-        // when mpv is fully destroyed and re-initialized. Recreating the
-        // SurfaceView while playing triggers surfaceDestroyed → detachSurface
-        // → black screen until the next frame, which can take 500ms+.
-        // We use a stable key so AndroidView is reused across file changes.
         if (state.mpvReady) {
             key("mpv_surface") {
                 AndroidView(
                     factory = { ctx -> MPVView(ctx) },
                     modifier = Modifier.fillMaxSize(),
-                    update = { /* surface managed by MPVView callbacks — no update needed */ },
+                    update = { /* surface managed by MPVView callbacks */ },
                 )
             }
         }
@@ -238,7 +228,6 @@ fun PlayerScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Default.ErrorOutline, null,
                         tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(56.dp))
-                    // Fix: state.error is a delegated property — can't smart-cast, use ?: ""
                     Text(state.error ?: "", color = Color.White,
                         style = MaterialTheme.typography.bodyMedium)
                     Button(onClick = onBack) { Text("Go Back") }
@@ -345,6 +334,9 @@ fun PlayerScreen(
                 onDismiss     = viewModel::hideSubtitleStyleSheet,
             )
         }
+        if (state.showQueuePanel) {
+            QueuePanel(state = state, viewModel = viewModel, onDismiss = viewModel::hideQueuePanel)
+        }
     }
 }
 
@@ -360,25 +352,27 @@ private fun PlayerControls(
     onSubtitlePick: () -> Unit,
 ) {
     val pb                  = state.playbackState
+    var showMoreMenu        by remember { mutableStateOf(false) }
     var showOrientationMenu by remember { mutableStateOf(false) }
+    var showRatioMenu       by remember { mutableStateOf(false) }
     var showSpeedMenu       by remember { mutableStateOf(false) }
     val speeds = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f)
 
     Box(Modifier.fillMaxSize()) {
-        // Gradient — top
+        // Gradient — top (Section 7: 120dp, darker)
         Box(
-            Modifier.fillMaxWidth().height(110.dp).align(Alignment.TopCenter)
+            Modifier.fillMaxWidth().height(120.dp).align(Alignment.TopCenter)
                 .background(Brush.verticalGradient(
-                    listOf(Color.Black.copy(0.78f), Color.Transparent)))
+                    listOf(Color.Black.copy(0.85f), Color.Transparent)))
         )
-        // Gradient — bottom
+        // Gradient — bottom (Section 7: 220dp, darker, covers 2 baris action)
         Box(
-            Modifier.fillMaxWidth().height(180.dp).align(Alignment.BottomCenter)
+            Modifier.fillMaxWidth().height(220.dp).align(Alignment.BottomCenter)
                 .background(Brush.verticalGradient(
-                    listOf(Color.Transparent, Color.Black.copy(0.88f))))
+                    listOf(Color.Transparent, Color.Black.copy(0.92f))))
         )
 
-        // ── Top bar ──────────────────────────────────────────────────────────
+        // ── Top bar (Section 3: minimalis — Back · Title · MoreVert) ────────
         Row(
             Modifier.fillMaxWidth().align(Alignment.TopCenter)
                 .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -395,35 +389,49 @@ private fun PlayerControls(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            // Aspect ratio cycle button
-            TextButton(onClick = viewModel::cycleAspectRatio) {
-                Text(state.aspectRatioMode.label, color = Color.White, fontSize = 11.sp)
-            }
-            // Speed menu
+            // MoreVert menu
             Box {
-                TextButton(onClick = { showSpeedMenu = true }) {
-                    Text("${pb.playbackSpeed}×", color = Color.White, fontSize = 11.sp)
+                IconButton(onClick = { showMoreMenu = true }) {
+                    Icon(Icons.Default.MoreVert, "More", tint = Color.White)
                 }
-                DropdownMenu(showSpeedMenu, { showSpeedMenu = false }) {
-                    speeds.forEach { spd ->
-                        DropdownMenuItem(
-                            text = { Text("${spd}×") },
-                            leadingIcon = {
-                                if (pb.playbackSpeed == spd)
-                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                            },
-                            onClick = { viewModel.setPlaybackSpeed(spd); showSpeedMenu = false },
-                        )
-                    }
+                DropdownMenu(
+                    expanded = showMoreMenu,
+                    onDismissRequest = { showMoreMenu = false },
+                ) {
+                    // Aspect Ratio submenu
+                    DropdownMenuItem(
+                        text = { Text("Aspect Ratio: ${state.aspectRatioMode.label}") },
+                        leadingIcon = { Icon(Icons.Default.AspectRatio, null, Modifier.size(18.dp)) },
+                        onClick = { viewModel.cycleAspectRatio(); showMoreMenu = false },
+                    )
+                    // Orientation submenu trigger
+                    DropdownMenuItem(
+                        text = { Text("Orientation") },
+                        leadingIcon = { Icon(Icons.Default.ScreenRotation, null, Modifier.size(18.dp)) },
+                        onClick = { showMoreMenu = false; showOrientationMenu = true },
+                    )
+                    // Lock controls
+                    DropdownMenuItem(
+                        text = { Text(if (state.isLocked) "Unlock Controls" else "Lock Controls") },
+                        leadingIcon = {
+                            Icon(
+                                if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                null, Modifier.size(18.dp),
+                            )
+                        },
+                        onClick = { viewModel.toggleLock(); showMoreMenu = false },
+                    )
+                    // Video Info
+                    DropdownMenuItem(
+                        text = { Text("Video Info") },
+                        leadingIcon = { Icon(Icons.Default.Info, null, Modifier.size(18.dp)) },
+                        onClick = { viewModel.toggleVideoInfo(); showMoreMenu = false },
+                    )
                 }
-            }
-            // Orientation menu
-            Box {
-                IconButton(onClick = { showOrientationMenu = true }) {
-                    Icon(Icons.Default.ScreenRotation, "Orientation", tint = Color.White)
-                }
+                // Orientation submenu (floats independently)
                 DropdownMenu(showOrientationMenu, { showOrientationMenu = false }) {
-                    OrientationMode.values().forEach { mode ->
+                    // B1: OrientationMode.values() → entries
+                    OrientationMode.entries.forEach { mode ->
                         DropdownMenuItem(
                             text = { Text(mode.label) },
                             leadingIcon = {
@@ -435,83 +443,87 @@ private fun PlayerControls(
                     }
                 }
             }
-            // Lock toggle
-            IconButton(onClick = viewModel::toggleLock) {
-                Icon(
-                    if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                    "Lock", tint = Color.White,
-                )
-            }
         }
 
-        // ── Center transport ─────────────────────────────────────────────────
+        // ── Center transport (Section 4: bigger buttons) ─────────────────────
         Row(
             Modifier.align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment     = Alignment.CenterVertically,
         ) {
-            // Skip Previous
+            // SkipPrev — 32dp icon, 48dp touch
             IconButton(
                 onClick  = viewModel::playPrev,
                 enabled  = state.hasPrev,
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(Icons.Default.SkipPrevious, "Previous",
-                    tint = if (state.hasPrev) Color.White else Color.White.copy(0.3f),
-                    modifier = Modifier.size(30.dp))
+                    tint = if (state.hasPrev) Color.White else Color.White.copy(0.5f),
+                    modifier = Modifier.size(32.dp))
             }
-            IconButton(onClick = { viewModel.seekBackward(10) }, Modifier.size(52.dp)) {
+            // Replay10 — 42dp icon, 56dp touch
+            IconButton(onClick = { viewModel.seekBackward(10) }, Modifier.size(56.dp)) {
                 Icon(Icons.Default.Replay10, "−10s",
-                    tint = Color.White, modifier = Modifier.size(38.dp))
+                    tint = Color.White, modifier = Modifier.size(42.dp))
             }
+            // Play/Pause — 48dp icon, 72dp FAB
             FloatingActionButton(
                 onClick        = viewModel::playPause,
-                modifier       = Modifier.size(64.dp),
+                modifier       = Modifier.size(72.dp),
                 containerColor = Color.White.copy(0.15f),
                 contentColor   = Color.White,
                 elevation      = FloatingActionButtonDefaults.elevation(0.dp),
             ) {
                 if (state.isBuffering) {
                     CircularProgressIndicator(
-                        color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                        color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(32.dp))
                 } else {
                     Icon(
                         if (pb.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        null, modifier = Modifier.size(38.dp),
+                        null, modifier = Modifier.size(48.dp),
                     )
                 }
             }
-            IconButton(onClick = { viewModel.seekForward(10) }, Modifier.size(52.dp)) {
+            // Forward10 — 42dp icon, 56dp touch
+            IconButton(onClick = { viewModel.seekForward(10) }, Modifier.size(56.dp)) {
                 Icon(Icons.Default.Forward10, "+10s",
-                    tint = Color.White, modifier = Modifier.size(38.dp))
+                    tint = Color.White, modifier = Modifier.size(42.dp))
             }
-            // Skip Next
+            // SkipNext — 32dp icon, 48dp touch
             IconButton(
                 onClick  = viewModel::playNext,
                 enabled  = state.hasNext,
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(Icons.Default.SkipNext, "Next",
-                    tint = if (state.hasNext) Color.White else Color.White.copy(0.3f),
-                    modifier = Modifier.size(30.dp))
+                    tint = if (state.hasNext) Color.White else Color.White.copy(0.5f),
+                    modifier = Modifier.size(32.dp))
             }
         }
 
-        // ── Bottom bar ───────────────────────────────────────────────────────
+        // ── Bottom section: Seeker + Action Rows ─────────────────────────────
         Column(
             Modifier.fillMaxWidth().align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                .padding(horizontal = 12.dp).padding(bottom = 8.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    DomainMediaItem.formatDuration(pb.currentPosition),
-                    color = Color.White, style = MaterialTheme.typography.labelMedium,
-                )
-                Text(
-                    DomainMediaItem.formatDuration(pb.duration),
-                    color = Color.White.copy(0.65f), style = MaterialTheme.typography.labelMedium,
-                )
+            // ── Seeker YouTube style (Section 5) ─────────────────────────────
+            // Chapter tick marks overlay
+            if (state.chapterMarks.isNotEmpty() && pb.duration > 0) {
+                Box(Modifier.fillMaxWidth().height(8.dp)) {
+                    state.chapterMarks.forEach { (timeMs, _) ->
+                        val fraction = (timeMs.toFloat() / pb.duration.toFloat()).coerceIn(0f, 1f)
+                        Box(
+                            Modifier
+                                .fillMaxHeight()
+                                .width(2.dp)
+                                .align(Alignment.CenterStart)
+                                .offset(x = (fraction * 1f).dp) // approximate, layout will vary
+                                .background(Color.White.copy(0.7f), RoundedCornerShape(1.dp))
+                        )
+                    }
+                }
             }
+            // Slider — trackHeight 4dp, thumb 16dp
             Slider(
                 value         = pb.progress,
                 onValueChange = { viewModel.seekTo((it * pb.duration).toLong()) },
@@ -521,11 +533,57 @@ private fun PlayerControls(
                     activeTrackColor   = MaterialTheme.colorScheme.primary,
                     inactiveTrackColor = Color.White.copy(0.3f),
                 ),
+                thumb = {
+                    Box(
+                        Modifier
+                            .size(16.dp)
+                            .background(Color.White, CircleShape)
+                    )
+                },
+                track = { sliderState ->
+                    SliderDefaults.Track(
+                        sliderState  = sliderState,
+                        modifier     = Modifier.height(4.dp),
+                        drawStopIndicator = null,
+                        thumbTrackGapSize = 0.dp,
+                    )
+                },
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                // Left: repeat + shuffle + stop + autoNext
+            // Timestamps: current (left) · sisa waktu negatif (right) — B8
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                Text(
+                    DomainMediaItem.formatDuration(pb.currentPosition),
+                    color = Color.White, style = MaterialTheme.typography.labelMedium,
+                )
+                Spacer(Modifier.weight(1f))
+                // B8: tampilkan sisa waktu dengan tanda minus (YouTube style)
+                val remaining = pb.duration - pb.currentPosition
+                Text(
+                    if (pb.duration > 0) "-${DomainMediaItem.formatDuration(remaining)}"
+                    else DomainMediaItem.formatDuration(pb.duration),
+                    color = Color.White.copy(0.65f), style = MaterialTheme.typography.labelMedium,
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            // ── Bottom Action Row 1 (Section 6) ──────────────────────────────
+            // Kiri: Lock · Repeat · AutoNext   Kanan: Subtitle · Audio · Info
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = viewModel::toggleRepeatMode) {
+                    // Lock
+                    IconButton(onClick = viewModel::toggleLock, Modifier.size(40.dp)) {
+                        Icon(
+                            if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            "Lock", tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    // Repeat
+                    IconButton(onClick = viewModel::toggleRepeatMode, Modifier.size(40.dp)) {
                         Icon(
                             when (pb.repeatMode) {
                                 RepeatMode.ONE -> Icons.Default.RepeatOne
@@ -534,35 +592,135 @@ private fun PlayerControls(
                             "Repeat",
                             tint = if (pb.repeatMode == RepeatMode.NONE)
                                 Color.White.copy(0.4f) else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp),
                         )
                     }
-                    // Auto-next toggle (skip to next file when video ends)
-                    IconButton(onClick = viewModel::toggleAutoNext) {
+                    // AutoNext
+                    IconButton(onClick = viewModel::toggleAutoNext, Modifier.size(40.dp)) {
                         Icon(
                             Icons.Default.SkipNext, "Auto-next",
                             tint = if (state.autoNext) MaterialTheme.colorScheme.primary
                                    else Color.White.copy(0.4f),
+                            modifier = Modifier.size(22.dp),
                         )
                     }
-                    // Stop
-                    IconButton(onClick = viewModel::stop) {
-                        Icon(Icons.Default.Stop, "Stop", tint = Color.White.copy(0.75f))
-                    }
                 }
-                // Right: info + subtitle + audio
-                Row {
-                    IconButton(onClick = viewModel::toggleVideoInfo) {
-                        Icon(Icons.Default.Info, "Video Info", tint = Color.White.copy(0.85f))
-                    }
-                    IconButton(onClick = viewModel::showSubtitlePanel) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Subtitle
+                    IconButton(onClick = viewModel::showSubtitlePanel, Modifier.size(40.dp)) {
                         Icon(
                             Icons.Default.Subtitles, "Subtitles",
                             tint = if (state.subtitleEnabled) MaterialTheme.colorScheme.primary
                                    else Color.White.copy(0.65f),
+                            modifier = Modifier.size(22.dp),
                         )
                     }
-                    IconButton(onClick = viewModel::showAudioPanel) {
-                        Icon(Icons.Default.Audiotrack, "Audio", tint = Color.White.copy(0.85f))
+                    // Audio
+                    IconButton(onClick = viewModel::showAudioPanel, Modifier.size(40.dp)) {
+                        Icon(Icons.Default.Audiotrack, "Audio",
+                            tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp))
+                    }
+                    // Video Info
+                    IconButton(onClick = viewModel::toggleVideoInfo, Modifier.size(40.dp)) {
+                        Icon(Icons.Default.Info, "Video Info",
+                            tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp))
+                    }
+                }
+            }
+
+            // ── Bottom Action Row 2 (Section 6) ──────────────────────────────
+            // Kiri: Speed · Queue   Kanan: Ratio · Orientation
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Speed TextButton — B9: pindah ke BottomActionRow
+                    Box {
+                        OutlinedButton(
+                            onClick = { showSpeedMenu = true },
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                                brush = Brush.horizontalGradient(
+                                    listOf(Color.White.copy(0.4f), Color.White.copy(0.4f))
+                                )
+                            ),
+                        ) {
+                            Text("${pb.playbackSpeed}×", color = Color.White, fontSize = 12.sp)
+                        }
+                        DropdownMenu(showSpeedMenu, { showSpeedMenu = false }) {
+                            speeds.forEach { spd ->
+                                DropdownMenuItem(
+                                    text = { Text("${spd}×") },
+                                    leadingIcon = {
+                                        if (pb.playbackSpeed == spd)
+                                            Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                                    },
+                                    onClick = { viewModel.setPlaybackSpeed(spd); showSpeedMenu = false },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    // Queue
+                    IconButton(onClick = viewModel::showQueuePanel, Modifier.size(40.dp)) {
+                        Icon(Icons.Default.QueueMusic, "Queue",
+                            tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp))
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Ratio TextButton
+                    Box {
+                        OutlinedButton(
+                            onClick = { showRatioMenu = true },
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                                brush = Brush.horizontalGradient(
+                                    listOf(Color.White.copy(0.4f), Color.White.copy(0.4f))
+                                )
+                            ),
+                        ) {
+                            Text(state.aspectRatioMode.label, color = Color.White, fontSize = 12.sp)
+                        }
+                        DropdownMenu(showRatioMenu, { showRatioMenu = false }) {
+                            AspectRatioMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.label) },
+                                    leadingIcon = {
+                                        if (state.aspectRatioMode == mode)
+                                            Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                                    },
+                                    onClick = {
+                                        // set specific ratio instead of cycling
+                                        if (state.aspectRatioMode != mode) viewModel.cycleAspectRatio()
+                                        showRatioMenu = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    // Orientation
+                    Box {
+                        IconButton(onClick = { showOrientationMenu = true }, Modifier.size(40.dp)) {
+                            Icon(Icons.Default.ScreenRotation, "Orientation",
+                                tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp))
+                        }
+                        DropdownMenu(showOrientationMenu, { showOrientationMenu = false }) {
+                            OrientationMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.label) },
+                                    leadingIcon = {
+                                        if (state.orientationMode == mode)
+                                            Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                                    },
+                                    onClick = { viewModel.setOrientationMode(mode); showOrientationMenu = false },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -571,9 +729,10 @@ private fun PlayerControls(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Subtitle Panel
+// Subtitle Panel → ModalBottomSheet (Section 8)
 // ─────────────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SubtitlePanel(
     state:      PlayerUiState,
@@ -581,128 +740,380 @@ private fun SubtitlePanel(
     onPickFile: () -> Unit,
     onDismiss:  () -> Unit,
 ) {
-    // Compact floating popup — anchored to bottom-end, doesn't block the full video.
-    Dialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            dismissOnBackPress    = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false,
-        ),
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        // Position card at bottom-end corner of the screen
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-            Surface(
-                modifier      = Modifier
-                    .width(280.dp)
-                    .padding(bottom = 72.dp, end = 8.dp),
-                shape         = RoundedCornerShape(16.dp),
-                tonalElevation = 8.dp,
-                shadowElevation = 8.dp,
-                color         = MaterialTheme.colorScheme.surface,
+        Column(
+            Modifier.fillMaxWidth()
+                .heightIn(max = 500.dp)
+                .padding(8.dp),
+        ) {
+            // Header
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
             ) {
-                Column(Modifier.padding(8.dp)) {
-
-                    // ── Header ────────────────────────────────────────────────
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment     = Alignment.CenterVertically,
-                    ) {
-                        Text("Subtitles", style = MaterialTheme.typography.titleSmall)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = viewModel::showSubtitleStyleSheet,
-                                modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Palette, "Style", Modifier.size(18.dp))
-                            }
-                            IconButton(onClick = onDismiss,
-                                modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Close, "Close", Modifier.size(18.dp))
-                            }
-                        }
+                Text("Subtitle", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = viewModel::showSubtitleStyleSheet,
+                        modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Palette, "Style", Modifier.size(20.dp))
                     }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Close, "Close", Modifier.size(20.dp))
+                    }
+                }
+            }
 
-                    // ── Delay strip ───────────────────────────────────────────
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay - 500L) },
-                            Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Remove, null, Modifier.size(14.dp))
-                        }
+            // Delay strip
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay - 500L) },
+                    Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Remove, null, Modifier.size(16.dp))
+                }
+                Text(
+                    "Delay ${state.subtitleDelay}ms",
+                    style    = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                )
+                IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay + 500L) },
+                    Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                }
+                if (state.subtitleDelay != 0L) {
+                    TextButton(
+                        onClick  = { viewModel.setSubtitleDelay(0L) },
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) { Text("Reset", style = MaterialTheme.typography.labelMedium) }
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            // Track list
+            LazyColumn(Modifier.fillMaxWidth()) {
+                item {
+                    TrackRow(
+                        label    = "Off",
+                        selected = !state.subtitleEnabled,
+                        onClick  = { viewModel.selectSubtitleTrack(null); onDismiss() },
+                    )
+                }
+                if (state.subtitleTracks.isNotEmpty()) {
+                    item {
                         Text(
-                            "Delay ${state.subtitleDelay}ms",
+                            "Embedded",
                             style    = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.weight(1f),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            color    = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 2.dp),
                         )
-                        IconButton(onClick = { viewModel.setSubtitleDelay(state.subtitleDelay + 500L) },
-                            Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Add, null, Modifier.size(14.dp))
-                        }
-                        if (state.subtitleDelay != 0L) {
-                            TextButton(
-                                onClick  = { viewModel.setSubtitleDelay(0L) },
-                                modifier = Modifier.height(28.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp),
-                            ) { Text("Reset", style = MaterialTheme.typography.labelSmall) }
-                        }
                     }
-
+                    items(state.subtitleTracks) { track ->
+                        TrackRow(
+                            label    = track.label,
+                            selected = state.subtitleEnabled &&
+                                       state.selectedSubtitleTrack == track.mpvId,
+                            onClick  = { viewModel.selectSubtitleTrack(track); onDismiss() },
+                        )
+                    }
+                }
+                item {
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-                    // ── Track list (scrollable) ───────────────────────────────
-                    LazyColumn(Modifier.heightIn(max = 240.dp)) {
-                        // Off
-                        item {
-                            TrackRow(
-                                label    = "Off",
-                                selected = !state.subtitleEnabled,
-                                onClick  = { viewModel.selectSubtitleTrack(null); onDismiss() },
-                            )
-                        }
-                        // Embedded tracks
-                        if (state.subtitleTracks.isNotEmpty()) {
-                            item {
-                                Text(
-                                    "Embedded",
-                                    style    = MaterialTheme.typography.labelSmall,
-                                    color    = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 2.dp),
-                                )
-                            }
-                            items(state.subtitleTracks) { track ->
-                                TrackRow(
-                                    label    = track.label,
-                                    selected = state.subtitleEnabled &&
-                                               state.selectedSubtitleTrack == track.mpvId,
-                                    onClick  = { viewModel.selectSubtitleTrack(track); onDismiss() },
-                                )
-                            }
-                        }
-                        // Load external
-                        item {
-                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onPickFile(); onDismiss() }
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(Icons.Default.FolderOpen, null, Modifier.size(18.dp))
-                                Text("Load file…", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onPickFile(); onDismiss() }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Default.FolderOpen, null, Modifier.size(20.dp))
+                        Text("Load file…", style = MaterialTheme.typography.bodyMedium)
                     }
+                }
+                item { Spacer(Modifier.height(16.dp)) }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audio Panel → ModalBottomSheet (Section 9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AudioPanel(
+    state:     PlayerUiState,
+    viewModel: PlayerViewModel,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier.fillMaxWidth()
+                .heightIn(max = 500.dp)
+                .padding(8.dp),
+        ) {
+            // Header
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text("Audio Track", style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Close, "Close", Modifier.size(20.dp))
+                }
+            }
+
+            // Delay strip
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                IconButton(
+                    onClick = { viewModel.setAudioDelay(state.audioDelay - 500L) },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(Icons.Default.Remove, null, Modifier.size(16.dp))
+                }
+                Text(
+                    "Delay ${state.audioDelay}ms",
+                    style    = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                )
+                IconButton(
+                    onClick = { viewModel.setAudioDelay(state.audioDelay + 500L) },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                }
+                if (state.audioDelay != 0L) {
+                    TextButton(
+                        onClick  = { viewModel.setAudioDelay(0L) },
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) { Text("Reset", style = MaterialTheme.typography.labelMedium) }
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            // Track list
+            if (state.audioTracks.isEmpty()) {
+                Text(
+                    "No audio tracks detected",
+                    style    = MaterialTheme.typography.bodyMedium,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                )
+            } else {
+                LazyColumn(Modifier.fillMaxWidth()) {
+                    item {
+                        Text(
+                            "Tracks",
+                            style    = MaterialTheme.typography.labelSmall,
+                            color    = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 2.dp),
+                        )
+                    }
+                    items(state.audioTracks) { track ->
+                        TrackRow(
+                            label    = track.label,
+                            selected = state.selectedAudioTrack == track.mpvId,
+                            onClick  = { viewModel.selectAudioTrack(track); onDismiss() },
+                        )
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
                 }
             }
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Video Info Sheet → ModalBottomSheet (Section 10)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VideoInfoSheet(state: PlayerUiState, onDismiss: () -> Unit) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().heightIn(max = 500.dp).padding(16.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text("Video Info", style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Close, "Close", Modifier.size(20.dp))
+                }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+            if (state.videoInfo.isEmpty()) {
+                Text(
+                    "Loading…",
+                    style    = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            } else {
+                LazyColumn {
+                    items(state.videoInfo.entries.toList()) { (label, value) ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                label,
+                                style    = MaterialTheme.typography.labelSmall,
+                                color    = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.width(100.dp),
+                            )
+                            Text(
+                                value,
+                                style    = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 3,
+                            )
+                        }
+                    }
+                    item { Spacer(Modifier.height(24.dp)) }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Queue Panel — ModalBottomSheet BARU (Section 11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QueuePanel(
+    state:     PlayerUiState,
+    viewModel: PlayerViewModel,
+    onDismiss: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+
+    // B4: auto-scroll ke item aktif saat panel dibuka
+    LaunchedEffect(state.currentQueueIndex) {
+        if (state.queueItems.isNotEmpty()) {
+            listState.animateScrollToItem(state.currentQueueIndex.coerceAtMost(state.queueItems.lastIndex))
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().heightIn(max = 500.dp),
+        ) {
+            // Header
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Queue (${state.queueItems.size} file)",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Close, "Close", Modifier.size(20.dp))
+                }
+            }
+            HorizontalDivider()
+
+            if (state.queueItems.isEmpty()) {
+                Text(
+                    "Queue kosong",
+                    style    = MaterialTheme.typography.bodyMedium,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            } else {
+                LazyColumn(
+                    state  = listState,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    itemsIndexed(
+                        items = state.queueItems,
+                        key   = { _, uri -> uri.toString() },
+                    ) { index, uri ->
+                        val isActive = index == state.currentQueueIndex
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (isActive)
+                                        MaterialTheme.colorScheme.primary.copy(0.12f)
+                                    else Color.Transparent
+                                )
+                                .clickable { viewModel.jumpToQueue(index) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            if (isActive) {
+                                Icon(
+                                    Icons.Default.PlayArrow, "Playing",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            } else {
+                                Text(
+                                    "${index + 1}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(18.dp),
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                            Text(
+                                text     = uri.lastPathSegment?.let {
+                                    try { java.net.URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
+                                } ?: uri.toString(),
+                                style    = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                                color    = if (isActive) MaterialTheme.colorScheme.primary
+                                           else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                    item { Spacer(Modifier.height(24.dp)) }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared: Track Row
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -716,202 +1127,13 @@ private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
         RadioButton(
             selected = selected,
             onClick  = onClick,
-            modifier = Modifier.size(32.dp),
+            modifier = Modifier.size(36.dp),
         )
         Text(
             text  = label,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(1f).padding(start = 4.dp),
         )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Video Info Sheet
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun VideoInfoSheet(state: PlayerUiState, onDismiss: () -> Unit) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            dismissOnBackPress    = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false,
-        ),
-    ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-            Surface(
-                modifier        = Modifier
-                    .width(300.dp)
-                    // Cap height so the sheet never overflows; verticalScroll
-                    // lets the user scroll through all rows.
-                    .heightIn(max = 480.dp)
-                    .padding(bottom = 72.dp, end = 8.dp),
-                shape           = RoundedCornerShape(16.dp),
-                tonalElevation  = 8.dp,
-                shadowElevation = 8.dp,
-                color           = MaterialTheme.colorScheme.surface,
-            ) {
-                Column(
-                    Modifier
-                        .padding(16.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment     = Alignment.CenterVertically,
-                    ) {
-                        Text("Video Info", style = MaterialTheme.typography.titleSmall)
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Close, "Close", Modifier.size(18.dp))
-                        }
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    if (state.videoInfo.isEmpty()) {
-                        Text(
-                            "Loading…",
-                            style    = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(vertical = 8.dp),
-                        )
-                    } else {
-                        state.videoInfo.forEach { (label, value) ->
-                            Row(
-                                Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    label,
-                                    style    = MaterialTheme.typography.labelSmall,
-                                    color    = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.width(100.dp),
-                                )
-                                Text(
-                                    value,
-                                    style    = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 3,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Audio Panel
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun AudioPanel(
-    state:     PlayerUiState,
-    viewModel: PlayerViewModel,
-    onDismiss: () -> Unit,
-) {
-    // Compact floating popup — mirrors SubtitlePanel layout, anchored to bottom-end.
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            dismissOnBackPress    = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false,
-        ),
-    ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-            Surface(
-                modifier        = Modifier
-                    .width(280.dp)
-                    .padding(bottom = 72.dp, end = 8.dp),
-                shape           = RoundedCornerShape(16.dp),
-                tonalElevation  = 8.dp,
-                shadowElevation = 8.dp,
-                color           = MaterialTheme.colorScheme.surface,
-            ) {
-                Column(Modifier.padding(8.dp)) {
-
-                    // ── Header ────────────────────────────────────────────────
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment     = Alignment.CenterVertically,
-                    ) {
-                        Text("Audio Track", style = MaterialTheme.typography.titleSmall)
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Close, "Close", Modifier.size(18.dp))
-                        }
-                    }
-
-                    // ── Audio delay strip ─────────────────────────────────────
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        IconButton(
-                            onClick = { viewModel.setAudioDelay(state.audioDelay - 500L) },
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(Icons.Default.Remove, null, Modifier.size(14.dp))
-                        }
-                        Text(
-                            "Delay ${state.audioDelay}ms",
-                            style    = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.weight(1f),
-                            textAlign = TextAlign.Center,
-                        )
-                        IconButton(
-                            onClick = { viewModel.setAudioDelay(state.audioDelay + 500L) },
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(Icons.Default.Add, null, Modifier.size(14.dp))
-                        }
-                        if (state.audioDelay != 0L) {
-                            TextButton(
-                                onClick  = { viewModel.setAudioDelay(0L) },
-                                modifier = Modifier.height(28.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp),
-                            ) { Text("Reset", style = MaterialTheme.typography.labelSmall) }
-                        }
-                    }
-
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-                    // ── Track list (scrollable) ───────────────────────────────
-                    if (state.audioTracks.isEmpty()) {
-                        Text(
-                            "No audio tracks detected",
-                            style    = MaterialTheme.typography.bodySmall,
-                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        )
-                    } else {
-                        LazyColumn(Modifier.heightIn(max = 240.dp)) {
-                            if (state.audioTracks.isNotEmpty()) {
-                                item {
-                                    Text(
-                                        "Tracks",
-                                        style    = MaterialTheme.typography.labelSmall,
-                                        color    = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 2.dp),
-                                    )
-                                }
-                            }
-                            items(state.audioTracks) { track ->
-                                TrackRow(
-                                    label    = track.label,
-                                    selected = state.selectedAudioTrack == track.mpvId,
-                                    onClick  = { viewModel.selectAudioTrack(track); onDismiss() },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
