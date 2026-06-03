@@ -3,6 +3,7 @@ package com.ryoustream.player.domain.usecase
 import android.net.Uri
 import com.ryoustream.player.domain.model.MediaItem
 import com.ryoustream.player.domain.model.MediaSortOrder
+import com.ryoustream.player.domain.model.NetworkStream
 import com.ryoustream.player.domain.model.Playlist
 import com.ryoustream.player.domain.repository.MediaRepository
 import com.ryoustream.player.domain.repository.PlaylistRepository
@@ -138,4 +139,40 @@ class GetVideosByFolderUseCase @Inject constructor(
 ) {
     operator fun invoke(folderId: Long, sortOrder: MediaSortOrder = MediaSortOrder.NAME_ASC) =
         mediaRepository.getVideosByFolder(folderId, sortOrder)
+}
+
+/**
+ * Use case: Get all network streams
+ */
+class GetAllStreamsUseCase @Inject constructor(
+    private val streamRepository: StreamRepository
+) {
+    operator fun invoke() = streamRepository.getAllStreams()
+}
+
+/**
+ * Use case: Save (add) a network stream
+ */
+class SaveStreamUseCase @Inject constructor(
+    private val streamRepository: StreamRepository
+) {
+    suspend operator fun invoke(stream: NetworkStream) = streamRepository.addStream(stream)
+}
+
+/**
+ * Use case: Delete a network stream
+ */
+class DeleteStreamUseCase @Inject constructor(
+    private val streamRepository: StreamRepository
+) {
+    suspend operator fun invoke(id: Long) = streamRepository.deleteStream(id)
+}
+
+/**
+ * Use case: Toggle favorite on a network stream
+ */
+class ToggleStreamFavoriteUseCase @Inject constructor(
+    private val streamRepository: StreamRepository
+) {
+    suspend operator fun invoke(id: Long) = streamRepository.toggleFavorite(id)
 }

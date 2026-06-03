@@ -28,6 +28,7 @@ import com.ryoustream.player.presentation.folder.FolderScreen
 import com.ryoustream.player.presentation.home.HomeScreen
 import com.ryoustream.player.presentation.home.HomeViewModel
 import com.ryoustream.player.presentation.library.LibraryScreen
+import com.ryoustream.player.presentation.library.PlaylistDetailScreen
 import com.ryoustream.player.presentation.player.PlayerActivity
 import com.ryoustream.player.presentation.settings.SettingsScreen
 import com.ryoustream.player.presentation.you.YouScreen
@@ -142,6 +143,18 @@ fun RyouNavGraph(
                     onPlaylistClick = { playlist ->
                         navController.navigate(Screen.PlaylistDetail.createRoute(playlist.id))
                     },
+                    onStreamPlay    = { stream -> launchPlayer(context, Uri.parse(stream.url)) },
+                )
+            }
+
+            // ─── Playlist Detail ───────────────────────────────────────────────
+            composable(
+                route = Screen.PlaylistDetail.route,
+                arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
+            ) {
+                PlaylistDetailScreen(
+                    onMediaClick = { launchPlayer(context, it.uri) },
+                    onBack       = { navController.popBackStack() },
                 )
             }
 

@@ -86,6 +86,7 @@ android {
         buildConfigField("String", "COMMIT_HASH", "\"$commitHash\"")
         buildConfigField("int", "BUILD_NUMBER", "$buildNumber")
         buildConfigField("String", "VERSION_FULL", "\"$calculatedVersionName\"")
+        buildConfigField("String", "APPLICATION_ID", "\"com.ryoustream.player\"")
 
         // Room schema export
         ksp {

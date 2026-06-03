@@ -23,8 +23,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Size
 import com.ryoustream.player.domain.model.MediaItem
 import com.ryoustream.player.domain.model.VideoResolution
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 
 /**
  * VideoCard - Grid mode
@@ -375,13 +381,6 @@ fun VideoCardShimmer(modifier: Modifier = Modifier) {
 // ─────────────────────────────────────────────────────────────────────────────
 // VideoCardYouTube — full-width card gaya YouTube untuk Home feed
 // ─────────────────────────────────────────────────────────────────────────────
-
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import coil.request.ImageRequest
-import coil.size.Size
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
