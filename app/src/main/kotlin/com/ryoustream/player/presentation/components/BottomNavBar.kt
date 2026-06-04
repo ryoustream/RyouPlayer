@@ -41,19 +41,12 @@ sealed class BottomNavDest(
         icon = Icons.Outlined.VideoLibrary,
         iconSelected = Icons.Filled.VideoLibrary,
     )
-    object You : BottomNavDest(
-        route = "you",
-        label = "Anda",
-        icon = Icons.Outlined.Person,
-        iconSelected = Icons.Filled.Person,
-    )
 }
 
 val bottomNavDestinations = listOf(
     BottomNavDest.Home,
     BottomNavDest.Folders,
     BottomNavDest.Library,
-    BottomNavDest.You,
 )
 
 val bottomNavRoutes = bottomNavDestinations.map { it.route }.toSet()

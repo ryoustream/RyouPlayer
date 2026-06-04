@@ -12,7 +12,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,7 +40,6 @@ fun TopSearchBar(
     onQueryChange: (String) -> Unit,
     onExpand: () -> Unit,
     onCollapse: () -> Unit,
-    onYouClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     AnimatedContent(
@@ -96,9 +94,7 @@ fun TopSearchBar(
                 IconButton(onClick = onExpand) {
                     Icon(Icons.Default.Search, contentDescription = "Cari")
                 }
-                IconButton(onClick = onYouClick) {
-                    Icon(Icons.Default.AccountCircle, contentDescription = "Profil")
-                }
+
             }
         }
     }

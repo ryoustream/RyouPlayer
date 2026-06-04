@@ -31,7 +31,6 @@ import com.ryoustream.player.presentation.library.LibraryScreen
 import com.ryoustream.player.presentation.library.PlaylistDetailScreen
 import com.ryoustream.player.presentation.player.PlayerActivity
 import com.ryoustream.player.presentation.settings.SettingsScreen
-import com.ryoustream.player.presentation.you.YouScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -122,8 +121,8 @@ fun RyouNavGraph(
             // ─── Home ──────────────────────────────────────────────────────────
             composable(Screen.Home.route) {
                 HomeScreen(
-                    onMediaClick = { launchPlayer(context, it.uri) },
-                    onYouClick   = { navController.navigate(Screen.You.route) },
+                    onMediaClick    = { launchPlayer(context, it.uri) },
+                    onSettingsClick = { navController.navigate(Screen.Settings.route) },
                 )
             }
 
@@ -155,14 +154,6 @@ fun RyouNavGraph(
                 PlaylistDetailScreen(
                     onMediaClick = { launchPlayer(context, it.uri) },
                     onBack       = { navController.popBackStack() },
-                )
-            }
-
-            // ─── You ───────────────────────────────────────────────────────────
-            composable(Screen.You.route) {
-                YouScreen(
-                    onNavigateSettings = { navController.navigate(Screen.Settings.route) },
-                    onNavigateAbout    = { navController.navigate(Screen.About.route) },
                 )
             }
 

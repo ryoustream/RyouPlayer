@@ -3,12 +3,10 @@ package com.ryoustream.player.presentation.home
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -41,7 +39,7 @@ import com.ryoustream.player.presentation.components.*
 @Composable
 fun HomeScreen(
     onMediaClick: (MediaItem) -> Unit,
-    onYouClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -59,13 +57,12 @@ fun HomeScreen(
                     searchExpanded = false
                     viewModel.clearSearch()
                 },
-                onYouClick = onYouClick,
             )
         } else {
             // ── Modern TopBar (YouTube 2025 style) ───────────────────────────
             HomeTopBar(
                 onSearchClick = { searchExpanded = true },
-                onSettingsClick = onYouClick,
+                onSettingsClick = onSettingsClick,
             )
             // ── FilterChipRow ────────────────────────────────────────────────
             FilterChipRow(
@@ -137,21 +134,12 @@ private fun HomeTopBar(
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }
-        // Avatar lingkaran → onClick buka Settings/You
-        val initial = "R"  // branding initial
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .clickable(onClick = onSettingsClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                initial,
-                style      = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color      = MaterialTheme.colorScheme.onPrimaryContainer,
+        // Settings icon
+        IconButton(onClick = onSettingsClick) {
+            Icon(
+                Icons.Outlined.Settings,
+                contentDescription = "Pengaturan",
+                tint = MaterialTheme.colorScheme.onBackground,
             )
         }
     }
