@@ -784,9 +784,8 @@ class PlayerViewModel @Inject constructor(
 
     fun setSubtitleDelay(delayMs: Long) {
         if (MPVLib.isInitialized.get()) {
-            // B3: use setPropertyLong for zero to ensure mpv clears the delay cleanly
-            if (delayMs == 0L) MPVLib.setPropertyLong("sub-delay", 0)
-            else MPVLib.setPropertyDouble("sub-delay", delayMs / 1000.0)
+            // B3: reset to 0.0 so mpv clears the delay cleanly
+            MPVLib.setPropertyDouble("sub-delay", if (delayMs == 0L) 0.0 else delayMs / 1000.0)
         }
         _state.update { it.copy(subtitleDelay = delayMs) }
     }
