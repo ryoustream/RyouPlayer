@@ -52,13 +52,7 @@ fun YouScreen(
                 )
             }
 
-            item { YouSectionHeader("Pengaturan") }
-            item { YouListItem("Tampilan & Tema", Icons.Default.Palette, onNavigateSettings) }
-            item { YouListItem("Pemutaran", Icons.Default.PlayCircle, onNavigateSettings) }
-            item { YouListItem("Penyimpanan & Media", Icons.Default.Storage, onNavigateSettings) }
-            item { YouListItem("Lanjutan", Icons.Default.Tune, onNavigateSettings) }
-
-            item { YouSectionHeader("Lainnya") }
+            item { YouListItem("Pengaturan", Icons.Default.Settings, onNavigateSettings) }
             item { YouListItem("Tentang RyouPlayer", Icons.Default.Info, onNavigateAbout) }
         }
     }
