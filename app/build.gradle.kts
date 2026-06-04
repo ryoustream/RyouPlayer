@@ -34,7 +34,12 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 //   002 = Player controls revamp: hapus pill kiri/kanan, semua opsi
 //         dikelompokkan di PlayerSettingsSheet (gear icon). Fix header
 //         tab beranda/folder/pustaka, hapus tab Anda + avatar duplikat.
-val versionNameMinor: Int = 2
+//   003–006 = (internal iterations / skipped)
+//   007 = Settings panel rombak total → Right Side Sheet (PlayerSettingsSideSheet).
+//         Two-level navigator: Menu → sub-pages (Playback, Subtitle, Audio, Antrian).
+//         AnimatedContent slide transitions. PickerPage generic radio list.
+//         Tidak ada lagi DropdownMenu bertumpuk — scalable untuk fitur masa depan.
+val versionNameMinor: Int = 7
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066

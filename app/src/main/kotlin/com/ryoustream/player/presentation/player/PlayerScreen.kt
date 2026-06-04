@@ -356,12 +356,8 @@ private fun PlayerControls(
     onSubtitlePick: () -> Unit,
 ) {
     val pb                 = state.playbackState
-    var showMoreMenu       by remember { mutableStateOf(false) }
-    var showSettingsSheet  by remember { mutableStateOf(false) }
-    var showSpeedMenu      by remember { mutableStateOf(false) }
-    var showOrientationMenu by remember { mutableStateOf(false) }
-    var showRatioMenu      by remember { mutableStateOf(false) }
-    val speeds = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f)
+    var showMoreMenu      by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         // Gradient — top
@@ -574,22 +570,14 @@ private fun PlayerControls(
         }
     }
 
-    // ── Player Settings Sheet ────────────────────────────────────────────────
-    if (showSettingsSheet) {
-        PlayerSettingsSheet(
-            state            = state,
-            viewModel        = viewModel,
-            onSubtitlePick   = onSubtitlePick,
-            onDismiss        = { showSettingsSheet = false },
-            showSpeedMenu    = showSpeedMenu,
-            onShowSpeedMenu  = { showSpeedMenu = it },
-            showOrientationMenu = showOrientationMenu,
-            onShowOrientationMenu = { showOrientationMenu = it },
-            showRatioMenu    = showRatioMenu,
-            onShowRatioMenu  = { showRatioMenu = it },
-            speeds           = speeds,
-        )
-    }
+    // ── Player Settings Side Sheet ───────────────────────────────────────────
+    PlayerSettingsSideSheet(
+        visible        = showSettingsSheet,
+        state          = state,
+        viewModel      = viewModel,
+        onSubtitlePick = onSubtitlePick,
+        onDismiss      = { showSettingsSheet = false },
+    )
 
     // ── Lock overlay ─────────────────────────────────────────────────────────
     if (state.isLocked) {
@@ -605,202 +593,697 @@ private fun PlayerControls(
     }
 }
 
-// ── Player Settings Sheet ─────────────────────────────────────────────────────
-// Semua kontrol detail dikelompokkan di sini — bersih seperti YouTube
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings Side Sheet — Right panel, two-level navigator (Bstation × Netflix hybrid)
+// ─────────────────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
+private sealed class SettingPage {
+    object Menu         : SettingPage()
+    object Playback     : SettingPage()
+    object SpeedPicker  : SettingPage()
+    object OrientPicker : SettingPage()
+    object RatioPicker  : SettingPage()
+    object Subtitle     : SettingPage()
+    object Audio        : SettingPage()
+    object Queue        : SettingPage()
+}
+
 @Composable
-private fun PlayerSettingsSheet(
-    state:                PlayerUiState,
-    viewModel:            PlayerViewModel,
-    onSubtitlePick:       () -> Unit,
-    onDismiss:            () -> Unit,
-    showSpeedMenu:        Boolean,
-    onShowSpeedMenu:      (Boolean) -> Unit,
-    showOrientationMenu:  Boolean,
-    onShowOrientationMenu:(Boolean) -> Unit,
-    showRatioMenu:        Boolean,
-    onShowRatioMenu:      (Boolean) -> Unit,
-    speeds:               List<Float>,
+private fun PlayerSettingsSideSheet(
+    visible:        Boolean,
+    state:          PlayerUiState,
+    viewModel:      PlayerViewModel,
+    onSubtitlePick: () -> Unit,
+    onDismiss:      () -> Unit,
 ) {
-    val pb = state.playbackState
+    if (!visible) return
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    val speeds   = remember { listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f) }
+    val navStack = remember { mutableStateListOf<SettingPage>(SettingPage.Menu) }
+    val pb       = state.playbackState
+
+    fun push(page: SettingPage) { navStack.add(page) }
+    fun pop()  { if (navStack.size > 1) navStack.removeLast() else onDismiss() }
+
+    // Scrim + panel
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(0.55f))
+            .clickable(onClick = onDismiss),
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        // ── Side panel — consume click events so they don't fall to scrim ──
+        Surface(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(300.dp)
+                .clickable(enabled = false) {},
+            color          = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 6.dp,
+            shape          = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
         ) {
-            Text(
-                "Pengaturan Player",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
+            val currentPage = navStack.lastOrNull() ?: SettingPage.Menu
 
-            // ── Speed ──────────────────────────────────────────────────────
-            Box {
-                ListItem(
-                    headlineContent   = { Text("Kecepatan") },
-                    supportingContent = { Text("${pb.playbackSpeed}×") },
-                    leadingContent    = { Icon(Icons.Default.Speed, null) },
-                    trailingContent   = { Icon(Icons.Default.ChevronRight, null) },
-                    modifier = Modifier.clickable { onShowSpeedMenu(true) }.clip(RoundedCornerShape(12.dp)),
-                )
-                DropdownMenu(showSpeedMenu, { onShowSpeedMenu(false) }) {
-                    speeds.forEach { spd ->
-                        DropdownMenuItem(
-                            text = { Text("${spd}×") },
-                            leadingIcon = {
-                                if (pb.playbackSpeed == spd)
-                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                            },
-                            onClick = { viewModel.setPlaybackSpeed(spd); onShowSpeedMenu(false) },
-                        )
-                    }
-                }
-            }
-
-            // ── Repeat ─────────────────────────────────────────────────────
-            ListItem(
-                headlineContent = { Text("Ulangi") },
-                supportingContent = {
-                    Text(when (pb.repeatMode) {
-                        RepeatMode.NONE -> "Tidak diulang"
-                        RepeatMode.ONE  -> "Ulangi 1"
-                        else            -> "Ulangi semua"
-                    })
+            AnimatedContent(
+                targetState   = currentPage,
+                transitionSpec = {
+                    val goingForward = initialState == SettingPage.Menu ||
+                        (initialState == SettingPage.Playback &&
+                         (targetState == SettingPage.SpeedPicker ||
+                          targetState == SettingPage.OrientPicker ||
+                          targetState == SettingPage.RatioPicker))
+                    if (goingForward)
+                        (slideInHorizontally(tween(240)) { it } + fadeIn(tween(200))) togetherWith
+                        (slideOutHorizontally(tween(180)) { -it / 3 } + fadeOut(tween(160)))
+                    else
+                        (slideInHorizontally(tween(240)) { -it / 3 } + fadeIn(tween(200))) togetherWith
+                        (slideOutHorizontally(tween(180)) { it } + fadeOut(tween(160)))
                 },
-                leadingContent = {
-                    Icon(
-                        when (pb.repeatMode) {
-                            RepeatMode.ONE -> Icons.Default.RepeatOne
-                            else           -> Icons.Default.Repeat
-                        },
-                        null,
-                        tint = if (pb.repeatMode != RepeatMode.NONE)
-                                   MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                label = "settings_nav",
+            ) { page ->
+                when (page) {
+                    SettingPage.Menu -> SettingsMenuPage(
+                        state      = state,
+                        onNavigate = ::push,
+                        onDismiss  = onDismiss,
                     )
-                },
-                modifier = Modifier.clickable { viewModel.toggleRepeatMode() }.clip(RoundedCornerShape(12.dp)),
-            )
-
-            // ── Auto Next ──────────────────────────────────────────────────
-            ListItem(
-                headlineContent = { Text("Putar Berikutnya Otomatis") },
-                leadingContent  = { Icon(Icons.Default.SkipNext, null,
-                    tint = if (state.autoNext) MaterialTheme.colorScheme.primary
-                           else MaterialTheme.colorScheme.onSurfaceVariant) },
-                trailingContent = {
-                    Switch(checked = state.autoNext, onCheckedChange = { viewModel.toggleAutoNext() })
-                },
-                modifier = Modifier.clip(RoundedCornerShape(12.dp)),
-            )
-
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-            // ── Subtitle ───────────────────────────────────────────────────
-            ListItem(
-                headlineContent = { Text("Subtitle") },
-                leadingContent  = { Icon(Icons.Default.Subtitles, null,
-                    tint = if (state.subtitleEnabled) MaterialTheme.colorScheme.primary
-                           else MaterialTheme.colorScheme.onSurfaceVariant) },
-                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                modifier = Modifier.clickable {
-                    viewModel.showSubtitlePanel(); onDismiss()
-                }.clip(RoundedCornerShape(12.dp)),
-            )
-
-            // ── Audio ──────────────────────────────────────────────────────
-            ListItem(
-                headlineContent = { Text("Trek Audio") },
-                leadingContent  = { Icon(Icons.Default.Audiotrack, null) },
-                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                modifier = Modifier.clickable {
-                    viewModel.showAudioPanel(); onDismiss()
-                }.clip(RoundedCornerShape(12.dp)),
-            )
-
-            // ── Queue ──────────────────────────────────────────────────────
-            ListItem(
-                headlineContent = { Text("Antrian") },
-                leadingContent  = { Icon(Icons.Default.QueueMusic, null) },
-                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                modifier = Modifier.clickable {
-                    viewModel.showQueuePanel(); onDismiss()
-                }.clip(RoundedCornerShape(12.dp)),
-            )
-
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-            // ── Orientation ────────────────────────────────────────────────
-            Box {
-                ListItem(
-                    headlineContent   = { Text("Rotasi Layar") },
-                    supportingContent = { Text(state.orientationMode.label) },
-                    leadingContent    = { Icon(Icons.Default.ScreenRotation, null) },
-                    trailingContent   = { Icon(Icons.Default.ChevronRight, null) },
-                    modifier = Modifier.clickable { onShowOrientationMenu(true) }.clip(RoundedCornerShape(12.dp)),
-                )
-                DropdownMenu(showOrientationMenu, { onShowOrientationMenu(false) }) {
-                    OrientationMode.entries.forEach { mode ->
-                        DropdownMenuItem(
-                            text = { Text(mode.label) },
-                            leadingIcon = {
-                                if (state.orientationMode == mode)
-                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                    SettingPage.Playback -> PlaybackPage(
+                        state      = state,
+                        viewModel  = viewModel,
+                        onNavigate = ::push,
+                        onBack     = ::pop,
+                    )
+                    SettingPage.SpeedPicker -> PickerPage(
+                        title         = "Kecepatan",
+                        items         = speeds.map { "${it}×" },
+                        selectedIndex = speeds.indexOf(pb.playbackSpeed),
+                        onSelect      = { viewModel.setPlaybackSpeed(speeds[it]); pop() },
+                        onBack        = ::pop,
+                    )
+                    SettingPage.OrientPicker -> PickerPage(
+                        title         = "Rotasi Layar",
+                        items         = OrientationMode.entries.map { it.label },
+                        selectedIndex = OrientationMode.entries.indexOf(state.orientationMode),
+                        onSelect      = { viewModel.setOrientationMode(OrientationMode.entries[it]); pop() },
+                        onBack        = ::pop,
+                    )
+                    SettingPage.RatioPicker -> {
+                        val modes = AspectRatioMode.entries
+                        PickerPage(
+                            title         = "Rasio Layar",
+                            items         = modes.map { it.label },
+                            selectedIndex = modes.indexOf(state.aspectRatioMode),
+                            onSelect      = { idx ->
+                                val target  = modes[idx]
+                                val steps   = (modes.indexOf(target) - modes.indexOf(state.aspectRatioMode) + modes.size) % modes.size
+                                repeat(steps) { viewModel.cycleAspectRatio() }
+                                pop()
                             },
-                            onClick = { viewModel.setOrientationMode(mode); onShowOrientationMenu(false) },
+                            onBack = ::pop,
                         )
                     }
+                    SettingPage.Subtitle -> SubtitleSettingsPage(
+                        state        = state,
+                        viewModel    = viewModel,
+                        onPickFile   = { onSubtitlePick(); onDismiss() },
+                        onBack       = ::pop,
+                        onStyleSheet = { viewModel.showSubtitleStyleSheet(); onDismiss() },
+                    )
+                    SettingPage.Audio -> AudioSettingsPage(
+                        state     = state,
+                        viewModel = viewModel,
+                        onBack    = ::pop,
+                    )
+                    SettingPage.Queue -> QueueSettingsPage(
+                        state     = state,
+                        viewModel = viewModel,
+                        onBack    = ::pop,
+                        onDismiss = onDismiss,
+                    )
                 }
             }
-
-            // ── Aspect Ratio ───────────────────────────────────────────────
-            Box {
-                ListItem(
-                    headlineContent   = { Text("Rasio Layar") },
-                    supportingContent = { Text(state.aspectRatioMode.label) },
-                    leadingContent    = { Icon(Icons.Default.AspectRatio, null) },
-                    trailingContent   = { Icon(Icons.Default.ChevronRight, null) },
-                    modifier = Modifier.clickable { onShowRatioMenu(true) }.clip(RoundedCornerShape(12.dp)),
-                )
-                DropdownMenu(showRatioMenu, { onShowRatioMenu(false) }) {
-                    AspectRatioMode.entries.forEach { mode ->
-                        DropdownMenuItem(
-                            text = { Text(mode.label) },
-                            leadingIcon = {
-                                if (state.aspectRatioMode == mode)
-                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                            },
-                            onClick = {
-                                if (state.aspectRatioMode != mode) viewModel.cycleAspectRatio()
-                                onShowRatioMenu(false)
-                            },
-                        )
-                    }
-                }
-            }
-
-            // ── Video Info ─────────────────────────────────────────────────
-            ListItem(
-                headlineContent = { Text("Info Video") },
-                leadingContent  = { Icon(Icons.Default.Info, null) },
-                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                modifier = Modifier.clickable {
-                    viewModel.toggleVideoInfo(); onDismiss()
-                }.clip(RoundedCornerShape(12.dp)),
-            )
         }
     }
 }
 
+// ── Menu Page ─────────────────────────────────────────────────────────────────
+@Composable
+private fun SettingsMenuPage(
+    state:     PlayerUiState,
+    onNavigate:(SettingPage) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val pb = state.playbackState
+    val subLabel = when {
+        !state.subtitleEnabled -> "Off"
+        else -> state.subtitleTracks.firstOrNull { it.mpvId == state.selectedSubtitleTrack }
+                    ?.label?.take(12) ?: "On"
+    }
+    val audioLabel = state.audioTracks.firstOrNull { it.mpvId == state.selectedAudioTrack }
+                         ?.label?.take(12) ?: "—"
+
+    Column(Modifier.fillMaxSize()) {
+        // Header
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 4.dp, top = 16.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Pengaturan",
+                style      = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    Icons.Default.Close, "Tutup",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        HorizontalDivider(Modifier.padding(bottom = 4.dp))
+
+        LazyColumn(Modifier.fillMaxWidth()) {
+            item {
+                SettingsNavRow(
+                    emoji  = "▶",
+                    label  = "Playback",
+                    value  = "${pb.playbackSpeed}×",
+                    onClick = { onNavigate(SettingPage.Playback) },
+                )
+            }
+            item {
+                SettingsNavRow(
+                    emoji  = "💬",
+                    label  = "Subtitle",
+                    value  = subLabel,
+                    onClick = { onNavigate(SettingPage.Subtitle) },
+                )
+            }
+            item {
+                SettingsNavRow(
+                    emoji  = "🎵",
+                    label  = "Audio",
+                    value  = audioLabel,
+                    onClick = { onNavigate(SettingPage.Audio) },
+                )
+            }
+            item {
+                SettingsNavRow(
+                    emoji  = "📋",
+                    label  = "Antrian",
+                    value  = "${state.queueItems.size} file",
+                    onClick = { onNavigate(SettingPage.Queue) },
+                )
+            }
+        }
+    }
+}
+
+// ── Playback Page ─────────────────────────────────────────────────────────────
+@Composable
+private fun PlaybackPage(
+    state:     PlayerUiState,
+    viewModel: PlayerViewModel,
+    onNavigate:(SettingPage) -> Unit,
+    onBack:    () -> Unit,
+) {
+    val pb = state.playbackState
+    Column(Modifier.fillMaxSize()) {
+        SubPageHeader("Playback", onBack)
+        HorizontalDivider(Modifier.padding(bottom = 4.dp))
+        LazyColumn(Modifier.fillMaxWidth()) {
+            item {
+                SettingsNavRow(
+                    label  = "Kecepatan",
+                    value  = "${pb.playbackSpeed}×",
+                    onClick = { onNavigate(SettingPage.SpeedPicker) },
+                )
+            }
+            item {
+                SettingsValueRow(
+                    label  = "Ulangi",
+                    value  = when (pb.repeatMode) {
+                        RepeatMode.NONE -> "Off"
+                        RepeatMode.ONE  -> "Satu"
+                        else            -> "Semua"
+                    },
+                    onClick = { viewModel.toggleRepeatMode() },
+                )
+            }
+            item {
+                SettingsSwitchRow(
+                    label    = "Putar Otomatis",
+                    checked  = state.autoNext,
+                    onToggle = { viewModel.toggleAutoNext() },
+                )
+            }
+            item { HorizontalDivider(Modifier.padding(vertical = 6.dp)) }
+            item {
+                SettingsNavRow(
+                    label  = "Rotasi Layar",
+                    value  = state.orientationMode.shortLabel,
+                    onClick = { onNavigate(SettingPage.OrientPicker) },
+                )
+            }
+            item {
+                SettingsNavRow(
+                    label  = "Rasio Layar",
+                    value  = state.aspectRatioMode.label,
+                    onClick = { onNavigate(SettingPage.RatioPicker) },
+                )
+            }
+        }
+    }
+}
+
+// ── Picker Page — generic radio-style list ────────────────────────────────────
+@Composable
+private fun PickerPage(
+    title:         String,
+    items:         List<String>,
+    selectedIndex: Int,
+    onSelect:      (Int) -> Unit,
+    onBack:        () -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        SubPageHeader(title, onBack)
+        HorizontalDivider(Modifier.padding(bottom = 4.dp))
+        LazyColumn(Modifier.fillMaxWidth()) {
+            itemsIndexed(items) { idx, label ->
+                val selected = idx == selectedIndex
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (selected)
+                                MaterialTheme.colorScheme.primary.copy(0.09f)
+                            else Color.Transparent
+                        )
+                        .clickable { onSelect(idx) }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        label,
+                        style      = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                        color      = if (selected) MaterialTheme.colorScheme.primary
+                                     else MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (selected) {
+                        Icon(
+                            Icons.Default.Check, null,
+                            tint     = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+}
+
+// ── Subtitle Settings Page ────────────────────────────────────────────────────
+@Composable
+private fun SubtitleSettingsPage(
+    state:        PlayerUiState,
+    viewModel:    PlayerViewModel,
+    onPickFile:   () -> Unit,
+    onBack:       () -> Unit,
+    onStyleSheet: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        SubPageHeader("Subtitle", onBack)
+        HorizontalDivider(Modifier.padding(bottom = 4.dp))
+        LazyColumn(Modifier.fillMaxWidth()) {
+            // Off
+            item {
+                TrackRow(
+                    label    = "Off",
+                    selected = !state.subtitleEnabled,
+                    onClick  = { viewModel.selectSubtitleTrack(null) },
+                )
+            }
+            // Embedded tracks
+            if (state.subtitleTracks.isNotEmpty()) {
+                item {
+                    Text(
+                        "Tersedia",
+                        style    = MaterialTheme.typography.labelSmall,
+                        color    = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 2.dp),
+                    )
+                }
+                items(state.subtitleTracks) { track ->
+                    TrackRow(
+                        label    = track.label,
+                        selected = state.subtitleEnabled &&
+                                   state.selectedSubtitleTrack == track.mpvId,
+                        onClick  = { viewModel.selectSubtitleTrack(track) },
+                    )
+                }
+            }
+            item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+            // Delay
+            item {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Delay", style = MaterialTheme.typography.bodyMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick  = { viewModel.setSubtitleDelay(state.subtitleDelay - 500L) },
+                            modifier = Modifier.size(36.dp),
+                        ) { Icon(Icons.Default.Remove, null, Modifier.size(16.dp)) }
+                        Text(
+                            "${state.subtitleDelay}ms",
+                            style    = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.width(64.dp),
+                            textAlign = TextAlign.Center,
+                        )
+                        IconButton(
+                            onClick  = { viewModel.setSubtitleDelay(state.subtitleDelay + 500L) },
+                            modifier = Modifier.size(36.dp),
+                        ) { Icon(Icons.Default.Add, null, Modifier.size(16.dp)) }
+                    }
+                }
+            }
+            item { HorizontalDivider(Modifier.padding(vertical = 4.dp)) }
+            // Style Sheet
+            item {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onStyleSheet)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(Icons.Default.Palette, null, Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Gaya Subtitle", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Icon(
+                        Icons.Default.ChevronRight, null,
+                        tint     = MaterialTheme.colorScheme.onSurfaceVariant.copy(0.6f),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+            // Load external file
+            item {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onPickFile)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(Icons.Default.FolderOpen, null, Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Load file…", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+}
+
+// ── Audio Settings Page ───────────────────────────────────────────────────────
+@Composable
+private fun AudioSettingsPage(
+    state:     PlayerUiState,
+    viewModel: PlayerViewModel,
+    onBack:    () -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        SubPageHeader("Audio", onBack)
+        HorizontalDivider(Modifier.padding(bottom = 4.dp))
+        LazyColumn(Modifier.fillMaxWidth()) {
+            if (state.audioTracks.isEmpty()) {
+                item {
+                    Text(
+                        "Tidak ada audio track",
+                        style    = MaterialTheme.typography.bodyMedium,
+                        color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            } else {
+                item {
+                    Text(
+                        "Track",
+                        style    = MaterialTheme.typography.labelSmall,
+                        color    = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 2.dp),
+                    )
+                }
+                items(state.audioTracks) { track ->
+                    TrackRow(
+                        label    = track.label,
+                        selected = state.selectedAudioTrack == track.mpvId,
+                        onClick  = { viewModel.selectAudioTrack(track) },
+                    )
+                }
+            }
+            item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+            // Delay
+            item {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Delay Audio", style = MaterialTheme.typography.bodyMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick  = { viewModel.setAudioDelay(state.audioDelay - 500L) },
+                            modifier = Modifier.size(36.dp),
+                        ) { Icon(Icons.Default.Remove, null, Modifier.size(16.dp)) }
+                        Text(
+                            "${state.audioDelay}ms",
+                            style     = MaterialTheme.typography.bodySmall,
+                            modifier  = Modifier.width(64.dp),
+                            textAlign = TextAlign.Center,
+                        )
+                        IconButton(
+                            onClick  = { viewModel.setAudioDelay(state.audioDelay + 500L) },
+                            modifier = Modifier.size(36.dp),
+                        ) { Icon(Icons.Default.Add, null, Modifier.size(16.dp)) }
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+}
+
+// ── Queue Settings Page ───────────────────────────────────────────────────────
+@Composable
+private fun QueueSettingsPage(
+    state:     PlayerUiState,
+    viewModel: PlayerViewModel,
+    onBack:    () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.currentQueueIndex) {
+        if (state.queueItems.isNotEmpty()) {
+            listState.animateScrollToItem(
+                state.currentQueueIndex.coerceAtMost(state.queueItems.lastIndex)
+            )
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        SubPageHeader("Antrian (${state.queueItems.size})", onBack)
+        HorizontalDivider()
+        if (state.queueItems.isEmpty()) {
+            Text(
+                "Queue kosong",
+                style    = MaterialTheme.typography.bodyMedium,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp),
+            )
+        } else {
+            LazyColumn(
+                state    = listState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            ) {
+                itemsIndexed(
+                    items = state.queueItems,
+                    key   = { _, uri -> uri.toString() },
+                ) { index, uri ->
+                    val isActive = index == state.currentQueueIndex
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (isActive)
+                                    MaterialTheme.colorScheme.primary.copy(0.10f)
+                                else Color.Transparent
+                            )
+                            .clickable { viewModel.jumpToQueue(index); onDismiss() }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (isActive) {
+                            Icon(
+                                Icons.Default.PlayArrow, "Playing",
+                                tint     = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        } else {
+                            Text(
+                                "${index + 1}",
+                                style     = MaterialTheme.typography.labelSmall,
+                                color     = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier  = Modifier.width(16.dp),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                        Text(
+                            text = uri.lastPathSegment?.let {
+                                try { java.net.URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
+                            } ?: uri.toString(),
+                            style    = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                            color    = if (isActive) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                item { Spacer(Modifier.height(24.dp)) }
+            }
+        }
+    }
+}
+
+// ── Shared: Sub-page header with back button ──────────────────────────────────
+@Composable
+private fun SubPageHeader(title: String, onBack: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack, "Kembali",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            title,
+            style      = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier   = Modifier.weight(1f),
+        )
+    }
+}
+
+// ── Shared: Nav row — label + value badge + chevron ───────────────────────────
+@Composable
+private fun SettingsNavRow(
+    label:   String,
+    value:   String,
+    onClick: () -> Unit,
+    emoji:   String? = null,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (emoji != null) {
+            Text(emoji, style = MaterialTheme.typography.bodyLarge)
+        }
+        Text(
+            label,
+            style    = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        if (value.isNotEmpty()) {
+            Text(
+                value,
+                style  = MaterialTheme.typography.bodySmall,
+                color  = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            Icons.Default.ChevronRight, null,
+            tint     = MaterialTheme.colorScheme.onSurfaceVariant.copy(0.45f),
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+// ── Shared: Value row — tap to cycle ─────────────────────────────────────────
+@Composable
+private fun SettingsValueRow(
+    label:   String,
+    value:   String,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+// ── Shared: Switch row ────────────────────────────────────────────────────────
+@Composable
+private fun SettingsSwitchRow(
+    label:   String,
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = { onToggle() })
+    }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Subtitle Panel → ModalBottomSheet (Section 8)
