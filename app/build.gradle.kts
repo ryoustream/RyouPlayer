@@ -31,7 +31,10 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 //   001 = YouTube-style UI rombak, About screen, bottom nav, home feed, FolderScreen mandiri
 //   101 = Player UI YouTube-style (MoreVert, ModalBottomSheet panels, QueuePanel),
 //         Settings revamp (label Indonesia, ValueSetting), 10 bug fixes
-val versionNameMinor: Int = 101
+//   102 = Settings 4-dialog bug fix (Speed/DoubleTap/FontSize/Codec sekarang save),
+//         Auto-update: download APK + install otomatis, pull-to-refresh di Folder
+//         & FoldersBrowser, auto-refresh saat setting .nomedia/hidden diubah
+val versionNameMinor: Int = 102
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066

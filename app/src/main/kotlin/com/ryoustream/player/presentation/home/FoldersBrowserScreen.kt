@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,10 +36,12 @@ import com.ryoustream.player.presentation.components.VideoCardShimmer
 fun FoldersBrowserScreen(
     folders: List<MediaFolder>,
     isLoading: Boolean,
+    isRefreshing: Boolean = false,
     folderViewMode: ViewMode,
     onFolderClick: (MediaFolder) -> Unit,
     onViewModeToggle: () -> Unit,
     onRescan: () -> Unit,
+    onRefresh: () -> Unit = {},
 ) {
     Scaffold(
         topBar = {
@@ -63,7 +66,11 @@ fun FoldersBrowserScreen(
             )
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh    = onRefresh,
+            modifier     = Modifier.padding(innerPadding).fillMaxSize(),
+        ) {
             when {
                 isLoading -> FoldersLoading()
                 folders.isEmpty() -> EmptyStateView(

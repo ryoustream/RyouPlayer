@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -81,9 +82,9 @@ fun FolderScreen(
                                 },
                                 singleLine = true,
                                 colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Color.Transparent,
+                                    focusedContainerColor   = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
+                                    focusedIndicatorColor   = Color.Transparent,
                                     unfocusedIndicatorColor = Color.Transparent,
                                 ),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -158,7 +159,12 @@ fun FolderScreen(
             )
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        // Pull-to-refresh — refresh konten folder
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh    = { if (!searchExpanded) viewModel.onRefresh() },
+            modifier     = Modifier.padding(innerPadding).fillMaxSize(),
+        ) {
             when {
                 uiState.isLoading -> LoadingGrid()
                 displayVideos.isEmpty() -> EmptyStateView(
@@ -167,17 +173,17 @@ fun FolderScreen(
                             modifier = Modifier.size(64.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
-                    title = "Folder kosong",
+                    title    = "Folder kosong",
                     subtitle = "Tidak ada video ditemukan di folder ini",
                 )
                 uiState.viewMode == ViewMode.GRID -> FolderVideoGrid(
-                    videos = displayVideos,
-                    onMediaClick = onMediaClick,
+                    videos          = displayVideos,
+                    onMediaClick    = onMediaClick,
                     onFavoriteToggle = viewModel::onToggleFavorite,
                 )
                 else -> FolderVideoList(
-                    videos = displayVideos,
-                    onMediaClick = onMediaClick,
+                    videos          = displayVideos,
+                    onMediaClick    = onMediaClick,
                     onFavoriteToggle = viewModel::onToggleFavorite,
                 )
             }
@@ -202,23 +208,23 @@ private fun FolderVideoGrid(
     ) {
         items(items = videos, key = { it.id }) { item ->
             VideoCardGrid(
-                item = item,
-                onClick = { onMediaClick(item) },
+                item             = item,
+                onClick          = { onMediaClick(item) },
                 onFavoriteToggle = { onFavoriteToggle(item.id) },
-                onMoreClick = { menuItem = item },
+                onMoreClick      = { menuItem = item },
             )
         }
     }
 
     menuItem?.let { item ->
         VideoOptionsMenu(
-            item = item,
-            expanded = true,
-            onDismiss = { menuItem = null },
-            onPlay = { onMediaClick(item) },
+            item             = item,
+            expanded         = true,
+            onDismiss        = { menuItem = null },
+            onPlay           = { onMediaClick(item) },
             onToggleFavorite = { onFavoriteToggle(item.id) },
-            onAddToPlaylist = {},
-            onProperties = { menuItem = null },
+            onAddToPlaylist  = {},
+            onProperties     = { menuItem = null },
         )
     }
 }
@@ -237,10 +243,10 @@ private fun FolderVideoList(
     ) {
         items(items = videos, key = { it.id }) { item ->
             VideoCardList(
-                item = item,
-                onClick = { onMediaClick(item) },
+                item             = item,
+                onClick          = { onMediaClick(item) },
                 onFavoriteToggle = { onFavoriteToggle(item.id) },
-                onMoreClick = { menuItem = item },
+                onMoreClick      = { menuItem = item },
             )
             HorizontalDivider(
                 modifier = Modifier.padding(start = 148.dp),
@@ -252,18 +258,17 @@ private fun FolderVideoList(
 
     menuItem?.let { item ->
         VideoOptionsMenu(
-            item = item,
-            expanded = true,
-            onDismiss = { menuItem = null },
-            onPlay = { onMediaClick(item) },
+            item             = item,
+            expanded         = true,
+            onDismiss        = { menuItem = null },
+            onPlay           = { onMediaClick(item) },
             onToggleFavorite = { onFavoriteToggle(item.id) },
-            onAddToPlaylist = {},
-            onProperties = { menuItem = null },
+            onAddToPlaylist  = {},
+            onProperties     = { menuItem = null },
         )
     }
 }
 
-// Reuse LoadingGrid dari HomeScreen — definisikan ulang secara lokal
 @Composable
 private fun LoadingGrid() {
     LazyVerticalGrid(

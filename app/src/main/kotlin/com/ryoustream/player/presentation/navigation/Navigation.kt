@@ -227,11 +227,13 @@ private fun FoldersTabScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     com.ryoustream.player.presentation.home.FoldersBrowserScreen(
-        folders        = uiState.folders,
-        isLoading      = uiState.isLoading,
-        folderViewMode = uiState.folderViewMode,
-        onFolderClick  = onFolderClick,
+        folders          = uiState.folders,
+        isLoading        = uiState.isLoading,
+        isRefreshing     = uiState.isRefreshing,
+        folderViewMode   = uiState.folderViewMode,
+        onFolderClick    = onFolderClick,
         onViewModeToggle = viewModel::onFolderViewModeToggle,
-        onRescan       = viewModel::onRescanMedia,
+        onRescan         = viewModel::onRescanMedia,
+        onRefresh        = viewModel::onRefresh,
     )
 }

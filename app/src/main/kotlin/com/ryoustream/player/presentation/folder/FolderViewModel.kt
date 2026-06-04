@@ -7,6 +7,7 @@ import com.ryoustream.player.domain.model.MediaItem
 import com.ryoustream.player.domain.model.MediaSortOrder
 import com.ryoustream.player.domain.model.ViewMode
 import com.ryoustream.player.domain.repository.MediaRepository
+import com.ryoustream.player.domain.repository.SettingsRepository
 import com.ryoustream.player.domain.usecase.ToggleFavoriteUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,6 +17,7 @@ import javax.inject.Inject
 
 data class FolderUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val videos: List<MediaItem> = emptyList(),
     val viewMode: ViewMode = ViewMode.GRID,
     val sortOrder: MediaSortOrder = MediaSortOrder.NAME_ASC,
@@ -29,6 +31,7 @@ class FolderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val mediaRepository: MediaRepository,
     private val toggleFavoriteUseCase: ToggleFavoriteUseCase,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val folderId: Long = checkNotNull(savedStateHandle["folderId"])
@@ -36,29 +39,51 @@ class FolderViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(FolderUiState())
     val uiState: StateFlow<FolderUiState> = _uiState.asStateFlow()
 
+    // Bump to force re-fetch (same pattern as HomeViewModel)
+    private val _refreshKey = MutableStateFlow(0L)
+
     init {
-        loadVideos()
+        observeVideos()
+        observeSettingsChanges()
     }
 
-    private fun loadVideos() {
+    private fun observeVideos() {
         viewModelScope.launch {
-            mediaRepository.getAllVideos(_uiState.value.sortOrder)
-                .catch { e -> _uiState.update { it.copy(error = e.message, isLoading = false) } }
+            _refreshKey
+                .flatMapLatest { _ ->
+                    mediaRepository.getAllVideos(_uiState.value.sortOrder)
+                }
+                .catch { e -> _uiState.update { it.copy(error = e.message, isLoading = false, isRefreshing = false) } }
                 .collect { allVideos ->
                     val folderVideos = allVideos.filter { it.folderId == folderId }
                     _uiState.update {
-                        it.copy(isLoading = false, videos = folderVideos)
+                        it.copy(
+                            isLoading    = false,
+                            isRefreshing = false,
+                            videos       = folderVideos,
+                        )
                     }
                 }
         }
     }
 
-    val filteredVideos: List<MediaItem>
-        get() {
-            val q = _uiState.value.searchQuery.trim()
-            return if (q.isBlank()) _uiState.value.videos
-            else _uiState.value.videos.filter { it.displayName.contains(q, ignoreCase = true) }
+    /**
+     * Otomatis refresh ketika setting .nomedia atau hidden files diubah.
+     * Observasi dilakukan dengan skip(1) agar tidak trigger saat init.
+     */
+    private fun observeSettingsChanges() {
+        viewModelScope.launch {
+            combine(
+                settingsRepository.showHiddenFiles,
+                settingsRepository.ignoreNomedia,
+            ) { hidden, nomedia -> hidden to nomedia }
+                .drop(1)  // lewati emisi pertama (nilai awal saat subscribe)
+                .distinctUntilChanged()
+                .collect {
+                    _refreshKey.value = System.currentTimeMillis()
+                }
         }
+    }
 
     fun onSearchQueryChange(query: String) = _uiState.update { it.copy(searchQuery = query) }
     fun clearSearch() = _uiState.update { it.copy(searchQuery = "") }
@@ -69,7 +94,18 @@ class FolderViewModel @Inject constructor(
 
     fun onSortOrderChange(order: MediaSortOrder) {
         _uiState.update { it.copy(sortOrder = order) }
-        loadVideos()
+        _refreshKey.value = System.currentTimeMillis()
+    }
+
+    /**
+     * Pull-to-refresh: set isRefreshing = true, lalu bump refresh key.
+     * isRefreshing akan di-clear saat data baru tiba di observeVideos().
+     */
+    fun onRefresh() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            _refreshKey.value = System.currentTimeMillis()
+        }
     }
 
     fun onToggleFavorite(mediaId: Long) {

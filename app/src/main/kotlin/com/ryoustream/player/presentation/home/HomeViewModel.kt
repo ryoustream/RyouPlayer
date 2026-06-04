@@ -11,6 +11,7 @@ import com.ryoustream.player.domain.model.StreamProtocol
 import com.ryoustream.player.domain.model.ViewMode
 import com.ryoustream.player.domain.repository.MediaRepository
 import com.ryoustream.player.domain.repository.PlaylistRepository
+import com.ryoustream.player.domain.repository.SettingsRepository
 import com.ryoustream.player.domain.repository.StreamRepository
 import com.ryoustream.player.domain.usecase.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -72,6 +73,7 @@ class HomeViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val streamRepository: StreamRepository,
     private val playlistRepository: PlaylistRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -93,6 +95,7 @@ class HomeViewModel @Inject constructor(
         loadRecent()
         loadStreams()
         loadPlaylists()
+        observeSettingsChanges()
     }
 
     // ── Background collectors ────────────────────────────────────────────────
@@ -157,6 +160,27 @@ class HomeViewModel @Inject constructor(
             playlistRepository.getAllPlaylists()
                 .catch { }
                 .collect { playlists -> _uiState.update { it.copy(playlists = playlists) } }
+        }
+    }
+
+    /**
+     * Otomatis refresh ketika setting .nomedia atau hidden files diubah.
+     * drop(1) agar tidak trigger saat init (emisi nilai awal).
+     */
+    private fun observeSettingsChanges() {
+        viewModelScope.launch {
+            combine(
+                settingsRepository.showHiddenFiles,
+                settingsRepository.ignoreNomedia,
+            ) { hidden, nomedia -> hidden to nomedia }
+                .drop(1)
+                .distinctUntilChanged()
+                .collect {
+                    // Setting berubah → refresh semua
+                    _uiState.update { it.copy(isRefreshing = true) }
+                    rescanMediaUseCase()
+                    _refreshKey.value = System.currentTimeMillis()
+                }
         }
     }
 

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider paths for RyouPlayer auto-update APK installation.
+    Exposes the public Downloads directory so the system installer
+    can read the downloaded APK via a content:// URI.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Public Downloads folder (Environment.DIRECTORY_DOWNLOADS) -->
+    <external-path
+        name="downloads"
+        path="Download/" />
+</paths>
