@@ -1150,7 +1150,7 @@ private fun RowScope.PillIconButton(
  * Text button (speed display) inside a ControlPill.
  */
 @Composable
-private fun RowScope.PillTextButton(
+private fun PillTextButton(
     text:    String,
     onClick: () -> Unit,
 ) {
