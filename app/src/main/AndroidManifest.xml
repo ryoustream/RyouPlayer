@@ -26,6 +26,10 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- WRITE_EXTERNAL_STORAGE — only needed below API 29 (scoped storage in API 29+) -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <!-- SAF / Document access -->
     <uses-permission android:name="android.permission.MANAGE_MEDIA" />
 

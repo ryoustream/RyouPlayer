@@ -4,10 +4,15 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -21,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -278,6 +284,12 @@ class SettingsViewModel @Inject constructor(
     }
 }
 
+// ─── Settings Navigation (Opsi B: in-screen AnimatedContent) ─────────────────
+
+enum class SettingsPage {
+    PLAYBACK, SUBTITLE, GESTURE, APPEARANCE, FILE, ADVANCED
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -288,22 +300,60 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val s by viewModel.uiState.collectAsStateWithLifecycle()
-    var showResetDialog     by remember { mutableStateOf(false) }
-    var showThemeDialog     by remember { mutableStateOf(false) }
-    var showUpdateDialog    by remember { mutableStateOf(false) }
-    var showSpeedDialog     by remember { mutableStateOf(false) }
-    var showDoubleTapDialog by remember { mutableStateOf(false) }
-    var showFontSizeDialog  by remember { mutableStateOf(false) }
-    var showCodecDialog     by remember { mutableStateOf(false) }
+    var currentPage by remember { mutableStateOf<SettingsPage?>(null) }
     val context = LocalContext.current
 
+    // BackHandler: intercept back on sub-pages
+    BackHandler(enabled = currentPage != null) { currentPage = null }
+
+    AnimatedContent(
+        targetState = currentPage,
+        transitionSpec = {
+            if (targetState != null) {
+                // Entering sub-page: slide in from right
+                slideInHorizontally(tween(250)) { it } + fadeIn(tween(200)) togetherWith
+                    slideOutHorizontally(tween(250)) { -it / 3 } + fadeOut(tween(150))
+            } else {
+                // Going back to index: slide in from left
+                slideInHorizontally(tween(250)) { -it / 3 } + fadeIn(tween(200)) togetherWith
+                    slideOutHorizontally(tween(250)) { it } + fadeOut(tween(150))
+            }
+        },
+        label = "settings_nav",
+    ) { page ->
+        when (page) {
+            null ->
+                SettingsIndexPage(
+                    onNavigate   = { currentPage = it },
+                    onBack       = onBack,
+                    onAboutClick = onAboutClick,
+                )
+            SettingsPage.PLAYBACK    -> PlaybackSettingsPage(s, viewModel) { currentPage = null }
+            SettingsPage.SUBTITLE    -> SubtitleSettingsPage(s, viewModel) { currentPage = null }
+            SettingsPage.GESTURE     -> GestureSettingsPage(s, viewModel) { currentPage = null }
+            SettingsPage.APPEARANCE  -> AppearanceSettingsPage(s, viewModel) { currentPage = null }
+            SettingsPage.FILE        -> FileSettingsPage(s, viewModel) { currentPage = null }
+            SettingsPage.ADVANCED    -> AdvancedSettingsPage(s, viewModel, context, onAboutClick) { currentPage = null }
+        }
+    }
+}
+
+// ─── Settings Index Page ──────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsIndexPage(
+    onNavigate:   (SettingsPage) -> Unit,
+    onBack:       () -> Unit,
+    onAboutClick: () -> Unit,
+) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Pengaturan") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Kembali")
                     }
                 },
             )
@@ -311,225 +361,418 @@ fun SettingsScreen(
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(bottom = 32.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp, ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-
-            // ── PEMUTARAN ─────────────────────────────────────────────────────
-            item { SectionHeader("Pemutaran") }
             item {
-                SwitchSetting(
-                    icon     = Icons.Default.Memory,
-                    title    = "Hardware Decoding",
-                    subtitle = "Gunakan GPU untuk decode video (disarankan)",
-                    checked  = s.hardwareDecoding,
-                    onCheckedChange = viewModel::setHardwareDecoding,
+                SettingsNavCard(
+                    icon     = Icons.Default.PlayCircle,
+                    title    = "Pemutaran",
+                    subtitle = "Kecepatan, ingat posisi, PiP, background…",
+                    onClick  = { onNavigate(SettingsPage.PLAYBACK) },
                 )
             }
             item {
-                SwitchSetting(
-                    icon     = Icons.Default.History,
-                    title    = "Ingat Posisi",
-                    subtitle = "Lanjutkan dari posisi terakhir",
-                    checked  = s.rememberPosition,
-                    onCheckedChange = viewModel::setRememberPosition,
-                )
-            }
-            item {
-                ValueSetting(
-                    icon     = Icons.Default.Speed,
-                    title    = "Kecepatan Default",
-                    value    = "${s.defaultSpeed}×",
-                    subtitle = "Kecepatan putar awal saat membuka video",
-                    onClick  = { showSpeedDialog = true },
-                )
-            }
-            item {
-                ValueSetting(
-                    icon     = Icons.Default.TouchApp,
-                    title    = "Detik Double-tap",
-                    value    = "${s.doubleTapSeconds} dtk",
-                    subtitle = "Durasi maju/mundur saat double-tap",
-                    onClick  = { showDoubleTapDialog = true },
-                )
-            }
-            item {
-                SwitchSetting(
-                    icon     = Icons.Default.MusicNote,
-                    title    = "Background Playback",
-                    subtitle = "Lanjutkan audio saat layar mati",
-                    checked  = s.backgroundPlay,
-                    onCheckedChange = viewModel::setBackgroundPlay,
-                )
-            }
-            item {
-                SwitchSetting(
-                    icon     = Icons.Default.PictureInPictureAlt,
-                    title    = "Picture-in-Picture",
-                    subtitle = "Tampilkan player kecil saat keluar aplikasi",
-                    checked  = s.pipEnabled,
-                    onCheckedChange = viewModel::setPipEnabled,
-                )
-            }
-
-            // ── SUBTITLE ──────────────────────────────────────────────────────
-            item { SectionHeader("Subtitle") }
-            item {
-                SwitchSetting(
+                SettingsNavCard(
                     icon     = Icons.Default.Subtitles,
-                    title    = "Tampilkan Subtitle",
-                    subtitle = "Aktifkan subtitle secara default",
-                    checked  = s.subtitleEnabled,
-                    onCheckedChange = viewModel::setSubtitleEnabled,
+                    title    = "Subtitle",
+                    subtitle = "Font, ukuran, tampilkan subtitle…",
+                    onClick  = { onNavigate(SettingsPage.SUBTITLE) },
                 )
             }
             item {
-                ValueSetting(
-                    icon     = Icons.Default.TextFields,
-                    title    = "Ukuran Font Subtitle",
-                    value    = "${s.subtitleFontSize}sp",
-                    subtitle = "Ukuran teks subtitle (10–36sp)",
-                    onClick  = { showFontSizeDialog = true },
-                )
-            }
-
-            // ── GERAKAN ───────────────────────────────────────────────────────
-            item { SectionHeader("Gerakan") }
-            item {
-                SwitchSetting(
-                    icon     = Icons.Default.SwipeRight,
-                    title    = "Seek (Geser Horizontal)",
-                    subtitle = "Geser horizontal untuk maju/mundur",
-                    checked  = s.gestureSeek,
-                    onCheckedChange = viewModel::setGestureSeek,
+                SettingsNavCard(
+                    icon     = Icons.Default.TouchApp,
+                    title    = "Gerakan",
+                    subtitle = "Seek, kecerahan, volume…",
+                    onClick  = { onNavigate(SettingsPage.GESTURE) },
                 )
             }
             item {
-                SwitchSetting(
-                    icon     = Icons.Default.Brightness6,
-                    title    = "Kecerahan (Geser Kiri)",
-                    subtitle = "Geser vertikal di sisi kiri untuk kecerahan",
-                    checked  = s.gestureBrightness,
-                    onCheckedChange = viewModel::setGestureBrightness,
-                )
-            }
-            item {
-                SwitchSetting(
-                    icon     = Icons.AutoMirrored.Filled.VolumeUp,
-                    title    = "Volume (Geser Kanan)",
-                    subtitle = "Geser vertikal di sisi kanan untuk volume",
-                    checked  = s.gestureVolume,
-                    onCheckedChange = viewModel::setGestureVolume,
-                )
-            }
-
-            // ── TAMPILAN ──────────────────────────────────────────────────────
-            item { SectionHeader("Tampilan") }
-            item {
-                ValueSetting(
-                    icon    = Icons.Default.DarkMode,
-                    title   = "Tema",
-                    value   = when (s.themeMode) {
-                        "DARK"  -> "Gelap"
-                        "LIGHT" -> "Terang"
-                        else    -> "Sistem"
-                    },
-                    subtitle = "Pilih tema tampilan aplikasi",
-                    onClick  = { showThemeDialog = true },
-                )
-            }
-            item {
-                SwitchSetting(
-                    icon     = Icons.Default.PhoneAndroid,
-                    title    = "AMOLED / Pure Black",
-                    subtitle = "Latar belakang hitam pekat di mode gelap",
-                    checked  = s.amoledMode,
-                    onCheckedChange = viewModel::setAmoledMode,
-                    enabled  = s.themeMode != "LIGHT",
-                )
-            }
-            item {
-                SwitchSetting(
+                SettingsNavCard(
                     icon     = Icons.Default.Palette,
-                    title    = "Dynamic Color",
-                    subtitle = "Gunakan warna wallpaper (Android 12+)",
-                    checked  = s.useSystemColor,
-                    onCheckedChange = viewModel::setUseSystemColor,
+                    title    = "Tampilan",
+                    subtitle = "Tema, AMOLED, animasi, notch…",
+                    onClick  = { onNavigate(SettingsPage.APPEARANCE) },
                 )
             }
             item {
-                SwitchSetting(
-                    icon     = Icons.Default.Bolt,
-                    title    = "Animasi UI",
-                    subtitle = "Aktifkan animasi transisi antarmuka",
-                    checked  = s.animationsEnabled,
-                    onCheckedChange = viewModel::setAnimations,
-                )
-            }
-            item {
-                SwitchSetting(
-                    icon     = Icons.Default.Fullscreen,
-                    title    = "Abaikan Notch",
-                    subtitle = "Perluas video ke area notch dan punch-hole kamera",
-                    checked  = s.ignoreNotch,
-                    onCheckedChange = viewModel::setIgnoreNotch,
-                )
-            }
-
-            // ── FILE & MEDIA ──────────────────────────────────────────────────
-            item { SectionHeader("File & Media") }
-            item {
-                SwitchSetting(
+                SettingsNavCard(
                     icon     = Icons.Default.FolderOpen,
-                    title    = "Tampilkan File Tersembunyi",
-                    subtitle = "Tampilkan file dan folder yang diawali '.'",
-                    checked  = s.showHiddenFiles,
-                    onCheckedChange = viewModel::setShowHiddenFiles,
+                    title    = "File & Media",
+                    subtitle = "File tersembunyi, .nomedia…",
+                    onClick  = { onNavigate(SettingsPage.FILE) },
                 )
             }
             item {
-                SwitchSetting(
-                    icon     = Icons.Default.VisibilityOff,
-                    title    = "Abaikan .nomedia",
-                    subtitle = "Tampilkan folder .nomedia (perlu re-indeks manual)",
-                    checked  = s.ignoreNomedia,
-                    onCheckedChange = viewModel::setIgnoreNomedia,
+                SettingsNavCard(
+                    icon     = Icons.Default.Tune,
+                    title    = "Lanjutan",
+                    subtitle = "Codec, hardware decode, pembaruan…",
+                    onClick  = { onNavigate(SettingsPage.ADVANCED) },
                 )
             }
-
-            // ── LANJUTAN ─────────────────────────────────────────────────────
-            item { SectionHeader("Lanjutan") }
             item {
-                ValueSetting(
-                    icon    = Icons.Default.Tune,
-                    title   = "Preferensi Codec",
-                    value   = when (s.codecPreference) {
-                        "SOFTWARE" -> "Software"
-                        "HARDWARE" -> "Hardware"
-                        else        -> "Otomatis"
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                // Tentang: versi app
+                ListItem(
+                    headlineContent   = { Text("RyouPlayer") },
+                    supportingContent = {
+                        Text(
+                            "v${BuildConfig.VERSION_FULL}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     },
-                    subtitle = "Pilihan decoder video",
-                    onClick  = { showCodecDialog = true },
+                    leadingContent = {
+                        Icon(Icons.Default.Info, null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
+                    trailingContent = {
+                        TextButton(onClick = onAboutClick) { Text("Lihat perubahan") }
+                    },
                 )
             }
-            item {
-                ClickableSetting(
-                    icon     = Icons.Default.Refresh,
-                    title    = "Reset ke Default",
-                    subtitle = "Kembalikan semua pengaturan ke awal",
-                    onClick  = { showResetDialog = true },
-                    tint     = MaterialTheme.colorScheme.error,
-                )
-            }
+        }
+    }
+}
 
-            // ── TENTANG ───────────────────────────────────────────────────────
-            item { SectionHeader("Tentang") }
+// ─── Settings NavCard ─────────────────────────────────────────────────────────
+
+@Composable
+private fun SettingsNavCard(
+    icon:    androidx.compose.ui.graphics.vector.ImageVector,
+    title:   String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick  = onClick,
+        shape    = RoundedCornerShape(16.dp),
+        color    = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        tonalElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier          = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // Icon container
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Icon(icon, null,
+                        tint     = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(2.dp))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(Icons.Default.ChevronRight, null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+// ─── Sub-Page: Pemutaran ──────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlaybackSettingsPage(
+    s:        SettingsUiState,
+    vm:       SettingsViewModel,
+    onBack:   () -> Unit,
+) {
+    var showSpeedDialog     by remember { mutableStateOf(false) }
+    var showDoubleTapDialog by remember { mutableStateOf(false) }
+
+    Scaffold(topBar = { SubPageTopBar("Pemutaran", onBack) }) { ip ->
+        LazyColumn(Modifier.fillMaxSize().padding(ip),
+            contentPadding = PaddingValues(bottom = 32.dp)) {
             item {
-                ClickableSetting(
-                    icon     = Icons.Default.Info,
-                    title    = "Tentang Aplikasi",
-                    subtitle = "Versi ${BuildConfig.VERSION_FULL}",
-                    onClick  = onAboutClick,
-                )
+                SwitchSetting(Icons.Default.Memory, "Hardware Decoding",
+                    "Gunakan GPU untuk decode video (disarankan)",
+                    s.hardwareDecoding, vm::setHardwareDecoding)
+            }
+            item {
+                SwitchSetting(Icons.Default.History, "Ingat Posisi",
+                    "Lanjutkan dari posisi terakhir",
+                    s.rememberPosition, vm::setRememberPosition)
+            }
+            item {
+                ValueSetting(Icons.Default.Speed, "Kecepatan Default",
+                    "${s.defaultSpeed}×", "Kecepatan putar awal saat membuka video",
+                    onClick = { showSpeedDialog = true })
+            }
+            item {
+                ValueSetting(Icons.Default.TouchApp, "Detik Double-tap",
+                    "${s.doubleTapSeconds} dtk", "Durasi maju/mundur saat double-tap",
+                    onClick = { showDoubleTapDialog = true })
+            }
+            item {
+                SwitchSetting(Icons.Default.MusicNote, "Background Playback",
+                    "Lanjutkan audio saat layar mati",
+                    s.backgroundPlay, vm::setBackgroundPlay)
+            }
+            item {
+                SwitchSetting(Icons.Default.PictureInPictureAlt, "Picture-in-Picture",
+                    "Tampilkan player kecil saat keluar aplikasi",
+                    s.pipEnabled, vm::setPipEnabled)
+            }
+        }
+    }
+
+    if (showSpeedDialog) {
+        val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
+        AlertDialog(onDismissRequest = { showSpeedDialog = false },
+            title = { Text("Kecepatan Default") },
+            text = {
+                Column { speeds.forEach { spd ->
+                    Row(Modifier.fillMaxWidth()
+                        .clickable { vm.setDefaultSpeed(spd); showSpeedDialog = false }
+                        .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(s.defaultSpeed == spd,
+                            { vm.setDefaultSpeed(spd); showSpeedDialog = false })
+                        Spacer(Modifier.width(8.dp)); Text("${spd}×")
+                    }
+                }}
+            },
+            confirmButton = { TextButton({ showSpeedDialog = false }) { Text("Tutup") } })
+    }
+
+    if (showDoubleTapDialog) {
+        AlertDialog(onDismissRequest = { showDoubleTapDialog = false },
+            title = { Text("Detik Double-tap") },
+            text = {
+                Column { listOf(5, 10, 15, 20, 30).forEach { sec ->
+                    Row(Modifier.fillMaxWidth()
+                        .clickable { vm.setDoubleTapSeconds(sec); showDoubleTapDialog = false }
+                        .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(s.doubleTapSeconds == sec,
+                            { vm.setDoubleTapSeconds(sec); showDoubleTapDialog = false })
+                        Spacer(Modifier.width(8.dp)); Text("$sec detik")
+                    }
+                }}
+            },
+            confirmButton = { TextButton({ showDoubleTapDialog = false }) { Text("Tutup") } })
+    }
+}
+
+// ─── Sub-Page: Subtitle ───────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubtitleSettingsPage(
+    s:      SettingsUiState,
+    vm:     SettingsViewModel,
+    onBack: () -> Unit,
+) {
+    var showFontSizeDialog by remember { mutableStateOf(false) }
+
+    Scaffold(topBar = { SubPageTopBar("Subtitle", onBack) }) { ip ->
+        LazyColumn(Modifier.fillMaxSize().padding(ip),
+            contentPadding = PaddingValues(bottom = 32.dp)) {
+            item {
+                SwitchSetting(Icons.Default.Subtitles, "Tampilkan Subtitle",
+                    "Aktifkan subtitle secara default",
+                    s.subtitleEnabled, vm::setSubtitleEnabled)
+            }
+            item {
+                ValueSetting(Icons.Default.TextFields, "Ukuran Font Subtitle",
+                    "${s.subtitleFontSize}sp", "Ukuran teks subtitle (10–36sp)",
+                    onClick = { showFontSizeDialog = true })
+            }
+        }
+    }
+
+    if (showFontSizeDialog) {
+        var sliderValue by remember { mutableFloatStateOf(s.subtitleFontSize.toFloat()) }
+        AlertDialog(
+            onDismissRequest = { vm.setSubtitleFontSize(sliderValue.roundToInt()); showFontSizeDialog = false },
+            title = { Text("Ukuran Font Subtitle") },
+            text = {
+                Column {
+                    Text("${sliderValue.roundToInt()}sp",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(8.dp))
+                    Slider(sliderValue, { sliderValue = it }, valueRange = 10f..36f, steps = 25)
+                    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                        Text("10sp", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("36sp", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton({ vm.setSubtitleFontSize(sliderValue.roundToInt()); showFontSizeDialog = false }) { Text("OK") }
+            },
+            dismissButton = { TextButton({ showFontSizeDialog = false }) { Text("Batal") } },
+        )
+    }
+}
+
+// ─── Sub-Page: Gerakan ────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GestureSettingsPage(
+    s:      SettingsUiState,
+    vm:     SettingsViewModel,
+    onBack: () -> Unit,
+) {
+    Scaffold(topBar = { SubPageTopBar("Gerakan", onBack) }) { ip ->
+        LazyColumn(Modifier.fillMaxSize().padding(ip),
+            contentPadding = PaddingValues(bottom = 32.dp)) {
+            item {
+                SwitchSetting(Icons.Default.SwipeRight, "Seek (Geser Horizontal)",
+                    "Geser horizontal untuk maju/mundur",
+                    s.gestureSeek, vm::setGestureSeek)
+            }
+            item {
+                SwitchSetting(Icons.Default.Brightness6, "Kecerahan (Geser Kiri)",
+                    "Geser vertikal di sisi kiri untuk kecerahan",
+                    s.gestureBrightness, vm::setGestureBrightness)
+            }
+            item {
+                SwitchSetting(Icons.AutoMirrored.Filled.VolumeUp, "Volume (Geser Kanan)",
+                    "Geser vertikal di sisi kanan untuk volume",
+                    s.gestureVolume, vm::setGestureVolume)
+            }
+        }
+    }
+}
+
+// ─── Sub-Page: Tampilan ───────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppearanceSettingsPage(
+    s:      SettingsUiState,
+    vm:     SettingsViewModel,
+    onBack: () -> Unit,
+) {
+    var showThemeDialog by remember { mutableStateOf(false) }
+
+    Scaffold(topBar = { SubPageTopBar("Tampilan", onBack) }) { ip ->
+        LazyColumn(Modifier.fillMaxSize().padding(ip),
+            contentPadding = PaddingValues(bottom = 32.dp)) {
+            item {
+                ValueSetting(Icons.Default.DarkMode, "Tema",
+                    when (s.themeMode) { "DARK" -> "Gelap"; "LIGHT" -> "Terang"; else -> "Sistem" },
+                    "Pilih tema tampilan aplikasi",
+                    onClick = { showThemeDialog = true })
+            }
+            item {
+                SwitchSetting(Icons.Default.PhoneAndroid, "AMOLED / Pure Black",
+                    "Latar belakang hitam pekat di mode gelap",
+                    s.amoledMode, vm::setAmoledMode,
+                    enabled = s.themeMode != "LIGHT")
+            }
+            item {
+                SwitchSetting(Icons.Default.Palette, "Dynamic Color",
+                    "Gunakan warna wallpaper (Android 12+)",
+                    s.useSystemColor, vm::setUseSystemColor)
+            }
+            item {
+                SwitchSetting(Icons.Default.Bolt, "Animasi UI",
+                    "Aktifkan animasi transisi antarmuka",
+                    s.animationsEnabled, vm::setAnimations)
+            }
+            item {
+                SwitchSetting(Icons.Default.Fullscreen, "Abaikan Notch",
+                    "Perluas video ke area notch dan punch-hole kamera",
+                    s.ignoreNotch, vm::setIgnoreNotch)
+            }
+        }
+    }
+
+    if (showThemeDialog) {
+        AlertDialog(onDismissRequest = { showThemeDialog = false },
+            title = { Text("Tema") },
+            text = {
+                Column { listOf("SYSTEM" to "Ikuti sistem", "LIGHT" to "Terang", "DARK" to "Gelap")
+                    .forEach { (value, label) ->
+                        Row(Modifier.fillMaxWidth()
+                            .clickable { vm.setThemeMode(value); showThemeDialog = false }
+                            .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(s.themeMode == value,
+                                { vm.setThemeMode(value); showThemeDialog = false })
+                            Spacer(Modifier.width(8.dp)); Text(label)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton({ showThemeDialog = false }) { Text("Tutup") } })
+    }
+}
+
+// ─── Sub-Page: File & Media ───────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FileSettingsPage(
+    s:      SettingsUiState,
+    vm:     SettingsViewModel,
+    onBack: () -> Unit,
+) {
+    Scaffold(topBar = { SubPageTopBar("File & Media", onBack) }) { ip ->
+        LazyColumn(Modifier.fillMaxSize().padding(ip),
+            contentPadding = PaddingValues(bottom = 32.dp)) {
+            item {
+                SwitchSetting(Icons.Default.FolderOpen, "Tampilkan File Tersembunyi",
+                    "Tampilkan file dan folder yang diawali '.'",
+                    s.showHiddenFiles, vm::setShowHiddenFiles)
+            }
+            item {
+                SwitchSetting(Icons.Default.VisibilityOff, "Abaikan .nomedia",
+                    "Tampilkan folder .nomedia (perlu re-indeks manual)",
+                    s.ignoreNomedia, vm::setIgnoreNomedia)
+            }
+        }
+    }
+}
+
+// ─── Sub-Page: Lanjutan ───────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AdvancedSettingsPage(
+    s:            SettingsUiState,
+    vm:           SettingsViewModel,
+    context:      android.content.Context,
+    onAboutClick: () -> Unit,
+    onBack:       () -> Unit,
+) {
+    var showResetDialog  by remember { mutableStateOf(false) }
+    var showCodecDialog  by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+
+    Scaffold(topBar = { SubPageTopBar("Lanjutan", onBack) }) { ip ->
+        LazyColumn(Modifier.fillMaxSize().padding(ip),
+            contentPadding = PaddingValues(bottom = 32.dp)) {
+            item {
+                ValueSetting(Icons.Default.Tune, "Preferensi Codec",
+                    when (s.codecPreference) { "SOFTWARE" -> "Software"; "HARDWARE" -> "Hardware"; else -> "Otomatis" },
+                    "Pilihan decoder video", onClick = { showCodecDialog = true })
             }
             item {
                 val uc = s.updateCheck
@@ -537,301 +780,133 @@ fun SettingsScreen(
                     headlineContent = { Text("Periksa Pembaruan") },
                     supportingContent = {
                         when {
-                            uc.isChecking -> Text("Memeriksa…")
-                            uc.error != null -> Text(uc.error, color = MaterialTheme.colorScheme.error)
-                            uc.result != null && uc.result.hasUpdate ->
+                            uc.isChecking         -> Text("Memeriksa…")
+                            uc.error != null       -> Text(uc.error, color = MaterialTheme.colorScheme.error)
+                            uc.result?.hasUpdate == true ->
                                 Text("Pembaruan tersedia: v${uc.result.latestVersion}",
                                     color = MaterialTheme.colorScheme.primary)
-                            uc.result != null ->
-                                Text("Sudah versi terbaru (v${uc.result.currentVersion})")
-                            else -> Text("Ketuk untuk memeriksa pembaruan")
+                            uc.result != null     -> Text("Sudah versi terbaru (v${uc.result.currentVersion})")
+                            else                   -> Text("Ketuk untuk memeriksa pembaruan")
                         }
                     },
                     leadingContent = {
-                        if (uc.isChecking) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
+                        if (uc.isChecking)
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        else
                             Icon(
-                                imageVector = if (uc.result?.hasUpdate == true)
-                                    Icons.Default.SystemUpdate
-                                else
-                                    Icons.Default.Sync,
-                                contentDescription = null,
+                                if (uc.result?.hasUpdate == true) Icons.Default.SystemUpdate else Icons.Default.Sync,
+                                null,
                                 tint = if (uc.result?.hasUpdate == true)
                                     MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        }
                     },
                     modifier = Modifier.clickable(enabled = !uc.isChecking) {
-                        viewModel.checkForUpdate()
-                        showUpdateDialog = true
+                        vm.checkForUpdate(); showUpdateDialog = true
                     },
                 )
             }
-        } // end LazyColumn
-
-        // ── Dialogs ───────────────────────────────────────────────────────────
-
-        // Tema
-        if (showThemeDialog) {
-            AlertDialog(
-                onDismissRequest = { showThemeDialog = false },
-                title = { Text("Tema") },
-                text = {
-                    Column {
-                        listOf("SYSTEM" to "Ikuti sistem", "LIGHT" to "Terang", "DARK" to "Gelap")
-                            .forEach { (value, label) ->
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.setThemeMode(value)
-                                            showThemeDialog = false
-                                        }
-                                        .padding(vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(
-                                        selected = s.themeMode == value,
-                                        onClick  = { viewModel.setThemeMode(value); showThemeDialog = false },
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(label)
-                                }
-                            }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showThemeDialog = false }) { Text("Tutup") }
-                },
-            )
+            item {
+                ClickableSetting(Icons.Default.Info, "Tentang Aplikasi",
+                    "Versi ${BuildConfig.VERSION_FULL}",
+                    onClick = onAboutClick)
+            }
+            item {
+                ClickableSetting(Icons.Default.Refresh, "Reset ke Default",
+                    "Kembalikan semua pengaturan ke awal",
+                    onClick = { showResetDialog = true },
+                    tint    = MaterialTheme.colorScheme.error)
+            }
         }
+    }
 
-        // Kecepatan default — FIX: sekarang benar-benar menyimpan pilihan
-        if (showSpeedDialog) {
-            val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
-            AlertDialog(
-                onDismissRequest = { showSpeedDialog = false },
-                title = { Text("Kecepatan Default") },
-                text = {
-                    Column {
-                        speeds.forEach { spd ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.setDefaultSpeed(spd)  // FIX: simpan nilai
-                                        showSpeedDialog = false
-                                    }
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = s.defaultSpeed == spd,
-                                    onClick  = {
-                                        viewModel.setDefaultSpeed(spd)  // FIX: simpan nilai
-                                        showSpeedDialog = false
-                                    },
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("${spd}×")
-                            }
+    if (showCodecDialog) {
+        AlertDialog(onDismissRequest = { showCodecDialog = false },
+            title = { Text("Preferensi Codec") },
+            text = {
+                Column { listOf("AUTO" to "Otomatis", "SOFTWARE" to "Software", "HARDWARE" to "Hardware")
+                    .forEach { (value, label) ->
+                        Row(Modifier.fillMaxWidth()
+                            .clickable { vm.setCodecPreference(value); showCodecDialog = false }
+                            .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(s.codecPreference == value,
+                                { vm.setCodecPreference(value); showCodecDialog = false })
+                            Spacer(Modifier.width(8.dp)); Text(label)
                         }
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showSpeedDialog = false }) { Text("Tutup") }
-                },
-            )
-        }
+                }
+            },
+            confirmButton = { TextButton({ showCodecDialog = false }) { Text("Tutup") } })
+    }
 
-        // Double-tap seconds — FIX: sekarang benar-benar menyimpan pilihan
-        if (showDoubleTapDialog) {
-            val options = listOf(5, 10, 15, 20, 30)
-            AlertDialog(
-                onDismissRequest = { showDoubleTapDialog = false },
-                title = { Text("Detik Double-tap") },
-                text = {
-                    Column {
-                        options.forEach { sec ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.setDoubleTapSeconds(sec)  // FIX: simpan nilai
-                                        showDoubleTapDialog = false
-                                    }
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = s.doubleTapSeconds == sec,
-                                    onClick  = {
-                                        viewModel.setDoubleTapSeconds(sec)  // FIX: simpan nilai
-                                        showDoubleTapDialog = false
-                                    },
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text("$sec detik")
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showDoubleTapDialog = false }) { Text("Tutup") }
-                },
-            )
-        }
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title   = { Text("Reset Pengaturan") },
+            text    = { Text("Semua pengaturan akan dikembalikan ke default. Tindakan ini tidak dapat dibatalkan.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { vm.resetDefaults(); showResetDialog = false },
+                    colors  = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Reset") }
+            },
+            dismissButton = { TextButton({ showResetDialog = false }) { Text("Batal") } },
+        )
+    }
 
-        // Font size subtitle — FIX: slider sekarang menyimpan nilai
-        if (showFontSizeDialog) {
-            var sliderValue by remember { mutableFloatStateOf(s.subtitleFontSize.toFloat()) }
-            AlertDialog(
-                onDismissRequest = {
-                    viewModel.setSubtitleFontSize(sliderValue.roundToInt())  // FIX: simpan saat dismiss
-                    showFontSizeDialog = false
-                },
-                title = { Text("Ukuran Font Subtitle") },
-                text = {
-                    Column {
-                        Text(
-                            "${sliderValue.roundToInt()}sp",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Slider(
-                            value = sliderValue,
-                            onValueChange = { sliderValue = it },  // FIX: update local state
-                            valueRange = 10f..36f,
-                            steps = 25,
-                        )
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text("10sp", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("36sp", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        viewModel.setSubtitleFontSize(sliderValue.roundToInt())  // FIX: simpan nilai
-                        showFontSizeDialog = false
-                    }) { Text("OK") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showFontSizeDialog = false }) { Text("Batal") }
-                },
-            )
-        }
-
-        // Codec preference — FIX: sekarang benar-benar menyimpan pilihan
-        if (showCodecDialog) {
-            AlertDialog(
-                onDismissRequest = { showCodecDialog = false },
-                title = { Text("Preferensi Codec") },
-                text = {
-                    Column {
-                        listOf("AUTO" to "Otomatis", "SOFTWARE" to "Software", "HARDWARE" to "Hardware")
-                            .forEach { (value, label) ->
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.setCodecPreference(value)  // FIX: simpan nilai
-                                            showCodecDialog = false
-                                        }
-                                        .padding(vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(
-                                        selected = s.codecPreference == value,
-                                        onClick  = {
-                                            viewModel.setCodecPreference(value)  // FIX: simpan nilai
-                                            showCodecDialog = false
-                                        },
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(label)
-                                }
-                            }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showCodecDialog = false }) { Text("Tutup") }
-                },
-            )
-        }
-
-        // Reset dialog
-        if (showResetDialog) {
-            AlertDialog(
-                onDismissRequest = { showResetDialog = false },
-                title = { Text("Reset Pengaturan") },
-                text = { Text("Semua pengaturan akan dikembalikan ke default. Tindakan ini tidak dapat dibatalkan.") },
-                confirmButton = {
-                    TextButton(
-                        onClick = { viewModel.resetDefaults(); showResetDialog = false },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) { Text("Reset") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showResetDialog = false }) { Text("Batal") }
-                },
-            )
-        }
-
-        // Update dialog — dengan fitur download + install otomatis
-        if (showUpdateDialog) {
-            val uc = s.updateCheck
-            UpdateDialog(
-                state    = uc,
-                onDismiss = { showUpdateDialog = false },
-                onDownload = {
-                    val apkUrl = uc.result?.apkDownloadUrl
-                    val version = uc.result?.latestVersion ?: ""
-                    if (apkUrl != null) {
-                        viewModel.startDownload(context, apkUrl, version)
-                    } else {
-                        // Fallback: buka browser jika tidak ada APK asset
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW,
-                                Uri.parse(uc.result?.releasePageUrl ?: "https://github.com/ryoustream/RyouPlayer/releases"))
-                        )
-                    }
-                },
-                onInstall = {
-                    val version = uc.result?.latestVersion ?: ""
-                    val installed = AppUpdateChecker.installApk(context, version)
-                    if (!installed) {
-                        // Jika gagal install (belum punya izin), arahkan ke pengaturan izin
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                                data = Uri.parse("package:${context.packageName}")
-                            }
-                            context.startActivity(intent)
-                        }
-                    }
-                },
-                onOpenReleasePage = {
+    if (showUpdateDialog) {
+        val uc = s.updateCheck
+        UpdateDialog(
+            state    = uc,
+            onDismiss = { showUpdateDialog = false },
+            onDownload = {
+                val apkUrl  = uc.result?.apkDownloadUrl
+                val version = uc.result?.latestVersion ?: ""
+                if (apkUrl != null) {
+                    vm.startDownload(context, apkUrl, version)
+                } else {
                     context.startActivity(
                         Intent(Intent.ACTION_VIEW,
                             Uri.parse(uc.result?.releasePageUrl ?: "https://github.com/ryoustream/RyouPlayer/releases"))
                     )
-                    showUpdateDialog = false
-                },
-            )
-        }
+                }
+            },
+            onInstall = {
+                val version = uc.result?.latestVersion ?: ""
+                val installed = AppUpdateChecker.installApk(context, version)
+                if (!installed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startActivity(
+                        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    )
+                }
+            },
+            onOpenReleasePage = {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW,
+                        Uri.parse(uc.result?.releasePageUrl ?: "https://github.com/ryoustream/RyouPlayer/releases"))
+                )
+                showUpdateDialog = false
+            },
+        )
     }
+}
+
+// ─── SubPageTopBar ─────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubPageTopBar(title: String, onBack: () -> Unit) {
+    TopAppBar(
+        title = { Text(title) },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Kembali")
+            }
+        },
+    )
 }
 
 // ─── Update Dialog (terpisah agar lebih rapi) ─────────────────────────────────

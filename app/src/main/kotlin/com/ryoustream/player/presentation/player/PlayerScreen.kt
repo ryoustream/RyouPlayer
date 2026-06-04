@@ -3,11 +3,14 @@ package com.ryoustream.player.presentation.player
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.Build
+import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.*
@@ -359,20 +362,20 @@ private fun PlayerControls(
     val speeds = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f)
 
     Box(Modifier.fillMaxSize()) {
-        // Gradient — top (Section 7: 120dp, darker)
+        // Gradient — top (soft, YouTube 2025 style)
         Box(
             Modifier.fillMaxWidth().height(120.dp).align(Alignment.TopCenter)
                 .background(Brush.verticalGradient(
-                    listOf(Color.Black.copy(0.85f), Color.Transparent)))
+                    listOf(Color.Black.copy(0.65f), Color.Transparent)))
         )
-        // Gradient — bottom (Section 7: 220dp, darker, covers 2 baris action)
+        // Gradient — bottom (soft, sufficient for readability)
         Box(
             Modifier.fillMaxWidth().height(220.dp).align(Alignment.BottomCenter)
                 .background(Brush.verticalGradient(
-                    listOf(Color.Transparent, Color.Black.copy(0.92f))))
+                    listOf(Color.Transparent, Color.Black.copy(0.75f))))
         )
 
-        // ── Top bar (Section 3: minimalis — Back · Title · MoreVert) ────────
+        // ── Top bar (minimalis — Back · Title · PiP · MoreVert) ─────────────
         Row(
             Modifier.fillMaxWidth().align(Alignment.TopCenter)
                 .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -389,6 +392,21 @@ private fun PlayerControls(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
+            // PiP button — only on Android O+ (API 26)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val pipActivity = LocalContext.current as? Activity
+                IconButton(onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && pipActivity != null) {
+                        @Suppress("DEPRECATION")
+                        val params = android.app.PictureInPictureParams.Builder()
+                            .setAspectRatio(Rational(16, 9))
+                            .build()
+                        pipActivity.enterPictureInPictureMode(params)
+                    }
+                }) {
+                    Icon(Icons.Default.PictureInPictureAlt, "PiP", tint = Color.White)
+                }
+            }
             // MoreVert menu
             Box {
                 IconButton(onClick = { showMoreMenu = true }) {
@@ -398,18 +416,6 @@ private fun PlayerControls(
                     expanded = showMoreMenu,
                     onDismissRequest = { showMoreMenu = false },
                 ) {
-                    // Aspect Ratio submenu
-                    DropdownMenuItem(
-                        text = { Text("Aspect Ratio: ${state.aspectRatioMode.label}") },
-                        leadingIcon = { Icon(Icons.Default.AspectRatio, null, Modifier.size(18.dp)) },
-                        onClick = { viewModel.cycleAspectRatio(); showMoreMenu = false },
-                    )
-                    // Orientation submenu trigger
-                    DropdownMenuItem(
-                        text = { Text("Orientation") },
-                        leadingIcon = { Icon(Icons.Default.ScreenRotation, null, Modifier.size(18.dp)) },
-                        onClick = { showMoreMenu = false; showOrientationMenu = true },
-                    )
                     // Lock controls
                     DropdownMenuItem(
                         text = { Text(if (state.isLocked) "Unlock Controls" else "Lock Controls") },
@@ -427,20 +433,6 @@ private fun PlayerControls(
                         leadingIcon = { Icon(Icons.Default.Info, null, Modifier.size(18.dp)) },
                         onClick = { viewModel.toggleVideoInfo(); showMoreMenu = false },
                     )
-                }
-                // Orientation submenu (floats independently)
-                DropdownMenu(showOrientationMenu, { showOrientationMenu = false }) {
-                    // B1: OrientationMode.values() → entries
-                    OrientationMode.entries.forEach { mode ->
-                        DropdownMenuItem(
-                            text = { Text(mode.label) },
-                            leadingIcon = {
-                                if (state.orientationMode == mode)
-                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                            },
-                            onClick = { viewModel.setOrientationMode(mode); showOrientationMenu = false },
-                        )
-                    }
                 }
             }
         }
@@ -567,89 +559,42 @@ private fun PlayerControls(
 
             Spacer(Modifier.height(4.dp))
 
-            // ── Bottom Action Row 1 (Section 6) ──────────────────────────────
-            // Kiri: Lock · Repeat · AutoNext   Kanan: Subtitle · Audio · Info
+            // ── Pill Controls Row ──────────────────────────────────────────
+            // Pill kiri: Lock · Repeat · AutoNext · Speed
+            // Pill kanan: Subtitle · Audio · Info · Queue
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Lock
-                    IconButton(onClick = viewModel::toggleLock, Modifier.size(40.dp)) {
-                        Icon(
-                            if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                            "Lock", tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    // Repeat
-                    IconButton(onClick = viewModel::toggleRepeatMode, Modifier.size(40.dp)) {
-                        Icon(
-                            when (pb.repeatMode) {
-                                RepeatMode.ONE -> Icons.Default.RepeatOne
-                                else           -> Icons.Default.Repeat
-                            },
-                            "Repeat",
-                            tint = if (pb.repeatMode == RepeatMode.NONE)
-                                Color.White.copy(0.4f) else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    // AutoNext
-                    IconButton(onClick = viewModel::toggleAutoNext, Modifier.size(40.dp)) {
-                        Icon(
-                            Icons.Default.SkipNext, "Auto-next",
-                            tint = if (state.autoNext) MaterialTheme.colorScheme.primary
-                                   else Color.White.copy(0.4f),
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Subtitle
-                    IconButton(onClick = viewModel::showSubtitlePanel, Modifier.size(40.dp)) {
-                        Icon(
-                            Icons.Default.Subtitles, "Subtitles",
-                            tint = if (state.subtitleEnabled) MaterialTheme.colorScheme.primary
-                                   else Color.White.copy(0.65f),
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    // Audio
-                    IconButton(onClick = viewModel::showAudioPanel, Modifier.size(40.dp)) {
-                        Icon(Icons.Default.Audiotrack, "Audio",
-                            tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp))
-                    }
-                    // Video Info
-                    IconButton(onClick = viewModel::toggleVideoInfo, Modifier.size(40.dp)) {
-                        Icon(Icons.Default.Info, "Video Info",
-                            tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp))
-                    }
-                }
-            }
-
-            // ── Bottom Action Row 2 (Section 6) ──────────────────────────────
-            // Kiri: Speed · Queue   Kanan: Ratio · Orientation
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Speed TextButton — B9: pindah ke BottomActionRow
+                // ── PILL KIRI: Playback controls ──────────────────────────
+                ControlPill {
+                    PillIconButton(
+                        icon   = if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                        onClick = viewModel::toggleLock,
+                        active  = state.isLocked,
+                    )
+                    PillDivider()
+                    PillIconButton(
+                        icon   = when (pb.repeatMode) {
+                            RepeatMode.ONE -> Icons.Default.RepeatOne
+                            else           -> Icons.Default.Repeat
+                        },
+                        onClick = viewModel::toggleRepeatMode,
+                        active  = pb.repeatMode != RepeatMode.NONE,
+                    )
+                    PillIconButton(
+                        icon   = Icons.Default.SkipNext,
+                        onClick = viewModel::toggleAutoNext,
+                        active  = state.autoNext,
+                    )
+                    PillDivider()
+                    // Speed — teks bukan icon
                     Box {
-                        OutlinedButton(
+                        PillTextButton(
+                            text    = "${pb.playbackSpeed}×",
                             onClick = { showSpeedMenu = true },
-                            modifier = Modifier.height(32.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
-                                brush = Brush.horizontalGradient(
-                                    listOf(Color.White.copy(0.4f), Color.White.copy(0.4f))
-                                )
-                            ),
-                        ) {
-                            Text("${pb.playbackSpeed}×", color = Color.White, fontSize = 12.sp)
-                        }
+                        )
                         DropdownMenu(showSpeedMenu, { showSpeedMenu = false }) {
                             speeds.forEach { spd ->
                                 DropdownMenuItem(
@@ -663,63 +608,79 @@ private fun PlayerControls(
                             }
                         }
                     }
-                    Spacer(Modifier.width(4.dp))
-                    // Queue
-                    IconButton(onClick = viewModel::showQueuePanel, Modifier.size(40.dp)) {
-                        Icon(Icons.Default.QueueMusic, "Queue",
-                            tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp))
+                }
+
+                // ── PILL KANAN: Media controls ────────────────────────────
+                ControlPill {
+                    PillIconButton(
+                        icon   = Icons.Default.Subtitles,
+                        onClick = viewModel::showSubtitlePanel,
+                        active  = state.subtitleEnabled,
+                    )
+                    PillIconButton(
+                        icon   = Icons.Default.Audiotrack,
+                        onClick = viewModel::showAudioPanel,
+                    )
+                    PillIconButton(
+                        icon   = Icons.Default.Info,
+                        onClick = viewModel::toggleVideoInfo,
+                    )
+                    PillDivider()
+                    PillIconButton(
+                        icon   = Icons.Default.QueueMusic,
+                        onClick = viewModel::showQueuePanel,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            // ── Orientation + Aspect Ratio row ────────────────────────────
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                // Kiri: Orientation
+                Box {
+                    SmallIconButton(
+                        icon  = Icons.Default.ScreenRotation,
+                        label = state.orientationMode.shortLabel,
+                        onClick = { showOrientationMenu = true },
+                    )
+                    DropdownMenu(showOrientationMenu, { showOrientationMenu = false }) {
+                        OrientationMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text(mode.label) },
+                                leadingIcon = {
+                                    if (state.orientationMode == mode)
+                                        Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                                },
+                                onClick = { viewModel.setOrientationMode(mode); showOrientationMenu = false },
+                            )
+                        }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Ratio TextButton
-                    Box {
-                        OutlinedButton(
-                            onClick = { showRatioMenu = true },
-                            modifier = Modifier.height(32.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
-                                brush = Brush.horizontalGradient(
-                                    listOf(Color.White.copy(0.4f), Color.White.copy(0.4f))
-                                )
-                            ),
-                        ) {
-                            Text(state.aspectRatioMode.label, color = Color.White, fontSize = 12.sp)
-                        }
-                        DropdownMenu(showRatioMenu, { showRatioMenu = false }) {
-                            AspectRatioMode.entries.forEach { mode ->
-                                DropdownMenuItem(
-                                    text = { Text(mode.label) },
-                                    leadingIcon = {
-                                        if (state.aspectRatioMode == mode)
-                                            Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                                    },
-                                    onClick = {
-                                        // set specific ratio instead of cycling
-                                        if (state.aspectRatioMode != mode) viewModel.cycleAspectRatio()
-                                        showRatioMenu = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    // Orientation
-                    Box {
-                        IconButton(onClick = { showOrientationMenu = true }, Modifier.size(40.dp)) {
-                            Icon(Icons.Default.ScreenRotation, "Orientation",
-                                tint = Color.White.copy(0.85f), modifier = Modifier.size(22.dp))
-                        }
-                        DropdownMenu(showOrientationMenu, { showOrientationMenu = false }) {
-                            OrientationMode.entries.forEach { mode ->
-                                DropdownMenuItem(
-                                    text = { Text(mode.label) },
-                                    leadingIcon = {
-                                        if (state.orientationMode == mode)
-                                            Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                                    },
-                                    onClick = { viewModel.setOrientationMode(mode); showOrientationMenu = false },
-                                )
-                            }
+                // Kanan: Aspect Ratio
+                Box {
+                    SmallIconButton(
+                        icon  = Icons.Default.AspectRatio,
+                        label = state.aspectRatioMode.label,
+                        onClick = { showRatioMenu = true },
+                    )
+                    DropdownMenu(showRatioMenu, { showRatioMenu = false }) {
+                        AspectRatioMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text(mode.label) },
+                                leadingIcon = {
+                                    if (state.aspectRatioMode == mode)
+                                        Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                                },
+                                onClick = {
+                                    if (state.aspectRatioMode != mode) viewModel.cycleAspectRatio()
+                                    showRatioMenu = false
+                                },
+                            )
                         }
                     }
                 }
@@ -1134,6 +1095,110 @@ private fun TrackRow(label: String, selected: Boolean, onClick: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(1f).padding(start = 4.dp),
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pill Control Components
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Frosted-glass pill container for grouped player controls.
+ * Background: semi-transparent black, thin white border for glass effect.
+ */
+@Composable
+private fun ControlPill(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape    = RoundedCornerShape(50.dp),
+        color    = Color.Black.copy(alpha = 0.45f),
+        border   = BorderStroke(0.5.dp, Color.White.copy(0.18f)),
+    ) {
+        Row(
+            modifier              = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            content               = content,
+        )
+    }
+}
+
+/**
+ * Icon button inside a ControlPill.
+ * Active state uses primary color tint; inactive uses White.copy(0.80f).
+ */
+@Composable
+private fun RowScope.PillIconButton(
+    icon:     ImageVector,
+    onClick:  () -> Unit,
+    active:   Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val tint = if (active) MaterialTheme.colorScheme.primary else Color.White.copy(0.80f)
+    IconButton(
+        onClick  = onClick,
+        modifier = modifier.size(40.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+    }
+}
+
+/**
+ * Text button (speed display) inside a ControlPill.
+ */
+@Composable
+private fun RowScope.PillTextButton(
+    text:    String,
+    onClick: () -> Unit,
+) {
+    TextButton(
+        onClick        = onClick,
+        modifier       = Modifier.height(40.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+    ) {
+        Text(text, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+/**
+ * Thin vertical divider inside a ControlPill.
+ */
+@Composable
+private fun RowScope.PillDivider() {
+    Box(
+        modifier = Modifier
+            .width(0.5.dp)
+            .height(20.dp)
+            .background(Color.White.copy(0.25f)),
+    )
+}
+
+/**
+ * Small frosted icon+label button — for Orientation and AspectRatio row.
+ */
+@Composable
+private fun SmallIconButton(
+    icon:    ImageVector,
+    label:   String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape   = RoundedCornerShape(8.dp),
+        color   = Color.Black.copy(alpha = 0.35f),
+        border  = BorderStroke(0.5.dp, Color.White.copy(0.15f)),
+    ) {
+        Row(
+            modifier          = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(icon, null, tint = Color.White.copy(0.85f), modifier = Modifier.size(16.dp))
+            Text(label, color = Color.White.copy(0.85f), fontSize = 11.sp)
+        }
     }
 }
 

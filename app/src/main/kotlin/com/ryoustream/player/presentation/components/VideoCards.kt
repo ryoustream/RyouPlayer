@@ -28,9 +28,25 @@ import coil.size.Size
 import com.ryoustream.player.domain.model.MediaItem
 import com.ryoustream.player.domain.model.VideoResolution
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+
+// Helper: map a string to one of 8 Material3 container colors for folder avatar
+@Composable
+private fun folderAvatarColor(folderName: String): Color {
+    val colors = listOf(
+        MaterialTheme.colorScheme.primaryContainer,
+        MaterialTheme.colorScheme.secondaryContainer,
+        MaterialTheme.colorScheme.tertiaryContainer,
+        MaterialTheme.colorScheme.errorContainer,
+        MaterialTheme.colorScheme.surfaceVariant,
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+        MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f),
+        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f),
+    )
+    val index = (folderName.hashCode() and 0x7FFFFFFF) % colors.size
+    return colors[index]
+}
 
 /**
  * VideoCard - Grid mode
@@ -411,12 +427,12 @@ fun VideoCardYouTube(
                     .build(),
                 contentDescription = item.displayName,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
             )
 
             // Gradient bawah
             Box(
-                Modifier.fillMaxSize().background(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(
                     Brush.verticalGradient(
                         listOf(Color.Transparent, Color.Black.copy(alpha = 0.3f)),
                         startY = 100f,
@@ -447,7 +463,8 @@ fun VideoCardYouTube(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(3.dp)
-                        .align(Alignment.BottomCenter),
+                        .align(Alignment.BottomCenter)
+                        .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)),
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = Color.White.copy(alpha = 0.3f),
                 )
@@ -461,19 +478,21 @@ fun VideoCardYouTube(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            // Folder avatar (mirip channel avatar YouTube)
+            // Folder avatar — huruf pertama folder (seperti channel YouTube)
+            val initial  = item.folderName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+            val bgColor  = folderAvatarColor(item.folderName)
             Box(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .background(bgColor),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    Icons.Default.Folder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(20.dp),
+                Text(
+                    initial,
+                    style      = MaterialTheme.typography.titleSmall,
+                    color      = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
                 )
             }
 

@@ -40,13 +40,13 @@ import org.json.JSONArray
 import javax.inject.Inject
 
 // ─── Orientation Mode ─────────────────────────────────────────────────────────
-enum class OrientationMode(val label: String) {
-    AUTO("Auto Rotate"),
-    SENSOR_VIDEO("Video Orientation"),
-    LOCK_PORTRAIT("Lock Portrait"),
-    LOCK_PORTRAIT_REVERSE("Lock Portrait Reverse"),
-    LOCK_LANDSCAPE("Lock Landscape"),
-    LOCK_LANDSCAPE_REVERSE("Lock Landscape Reverse"),
+enum class OrientationMode(val label: String, val shortLabel: String) {
+    AUTO("Auto Rotate", "Auto"),
+    SENSOR_VIDEO("Video Orientation", "Video"),
+    LOCK_PORTRAIT("Lock Portrait", "↑"),
+    LOCK_PORTRAIT_REVERSE("Lock Portrait Reverse", "↓"),
+    LOCK_LANDSCAPE("Lock Landscape", "→"),
+    LOCK_LANDSCAPE_REVERSE("Lock Landscape Reverse", "←"),
 }
 
 // ─── Track Info ───────────────────────────────────────────────────────────────

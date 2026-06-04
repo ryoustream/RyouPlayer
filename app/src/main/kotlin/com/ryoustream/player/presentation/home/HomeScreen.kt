@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -17,11 +19,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -43,25 +48,30 @@ fun HomeScreen(
     var searchExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ── TopSearchBar (sticky) ─────────────────────────────────────────────
-        TopSearchBar(
-            query = uiState.searchQuery,
-            expanded = searchExpanded,
-            onQueryChange = viewModel::onSearchQueryChange,
-            onExpand = { searchExpanded = true },
-            onCollapse = {
-                searchExpanded = false
-                viewModel.clearSearch()
-            },
-            onYouClick = onYouClick,
-        )
-
-        // ── FilterChipRow (hanya saat tidak search) ───────────────────────────
-        if (!searchExpanded) {
+        if (searchExpanded) {
+            // ── Inline search bar ────────────────────────────────────────────
+            TopSearchBar(
+                query = uiState.searchQuery,
+                expanded = searchExpanded,
+                onQueryChange = viewModel::onSearchQueryChange,
+                onExpand = { searchExpanded = true },
+                onCollapse = {
+                    searchExpanded = false
+                    viewModel.clearSearch()
+                },
+                onYouClick = onYouClick,
+            )
+        } else {
+            // ── Modern TopBar (YouTube 2025 style) ───────────────────────────
+            HomeTopBar(
+                onSearchClick = { searchExpanded = true },
+                onSettingsClick = onYouClick,
+            )
+            // ── FilterChipRow ────────────────────────────────────────────────
             FilterChipRow(
                 selected = uiState.activeFilter,
                 onSelect = viewModel::onFilterSelected,
-                modifier = Modifier.padding(vertical = 8.dp),
+                modifier = Modifier.padding(bottom = 4.dp),
             )
         }
 
@@ -92,6 +102,57 @@ fun HomeScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HomeTopBar — YouTube 2025 style: Branding + Search + Avatar
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun HomeTopBar(
+    onSearchClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Branding
+        Text(
+            text       = "RyouPlayer",
+            style      = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color      = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.weight(1f))
+        // Search icon
+        IconButton(onClick = onSearchClick) {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = "Cari",
+                tint = MaterialTheme.colorScheme.onBackground,
+            )
+        }
+        // Avatar lingkaran → onClick buka Settings/You
+        val initial = "R"  // branding initial
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .clickable(onClick = onSettingsClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                initial,
+                style      = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color      = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
         }
     }
 }
@@ -132,7 +193,11 @@ private fun HomeFeedContent(
             uiState.activeFilter == HomeFilter.ALL
         ) {
             item(key = "section_in_progress") {
-                HomeSectionHeader("Lanjutkan Menonton")
+                HomeSectionHeader(
+                    title = "Lanjutkan Menonton",
+                    actionLabel = "Lihat semua",
+                    onAction = { /* viewModel dapat handle filter change */ },
+                )
             }
             item(key = "in_progress_row") {
                 LazyRow(
@@ -229,14 +294,30 @@ private fun HomeFeedList(
 }
 
 @Composable
-private fun HomeSectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp, end = 16.dp),
-    )
+private fun HomeSectionHeader(title: String, actionLabel: String? = null, onAction: (() -> Unit)? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = 16.dp, bottom = 8.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text       = title,
+            style      = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color      = MaterialTheme.colorScheme.onBackground,
+        )
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text(
+                    text  = actionLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
 }
 
 // ── Mini card untuk section "Lanjutkan Menonton" (horizontal scroll) ──────────
@@ -248,8 +329,8 @@ private fun InProgressCard(
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.width(160.dp),
-        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.width(200.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
         ),
@@ -265,26 +346,74 @@ private fun InProgressCard(
                     model = item.thumbnailUri ?: item.uri,
                     contentDescription = item.displayName,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
                 )
-                // Progress bar
+                // Gradient overlay bawah
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(0.55f)),
+                                startY = 40f,
+                            )
+                        )
+                )
+                // Sisa waktu badge kanan atas
+                if (item.duration > 0 && item.lastPlayedPosition > 0) {
+                    val remaining = item.duration - item.lastPlayedPosition
+                    if (remaining > 0) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(5.dp),
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color.Black.copy(0.75f),
+                        ) {
+                            Text(
+                                text  = MediaItem.formatDuration(remaining),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
+                // Progress bar 4dp rounded di bawah
                 LinearProgressIndicator(
                     progress = { item.watchProgress },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp)
-                        .align(Alignment.BottomCenter),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.outlineVariant,
+                        .height(4.dp)
+                        .align(Alignment.BottomCenter)
+                        .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)),
+                    color    = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.White.copy(0.3f),
                 )
             }
-            Text(
-                text = item.displayName,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(8.dp),
-            )
+            Column(Modifier.padding(8.dp)) {
+                Text(
+                    text     = item.displayName,
+                    style    = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
+                if (item.folderName.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text  = item.folderName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }

@@ -129,12 +129,15 @@ class MediaStoreDataSource @Inject constructor(
                     )
                     val height = c.getInt(heightCol)
                     val width  = c.getInt(widthCol)
+                    val rawName  = c.getString(nameCol)
+                    val rawTitle = c.getString(titleCol)
 
                     items.add(MediaItem(
                         id           = id,
                         uri          = contentUri,
-                        displayName  = c.getString(nameCol) ?: "",
-                        title        = c.getString(titleCol) ?: c.getString(nameCol) ?: "",
+                        displayName  = computeDisplayName(rawName, rawTitle),
+                        title        = rawTitle?.takeIf { it.isNotBlank() }
+                                           ?: computeDisplayName(rawName, rawTitle),
                         duration     = c.getLong(durationCol),
                         size         = c.getLong(sizeCol),
                         mimeType     = c.getString(mimeCol) ?: "video/*",
@@ -449,4 +452,34 @@ class MediaStoreDataSource @Inject constructor(
 
     private fun getThumbnailUri(mediaId: Long): Uri =
         ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, mediaId)
+
+    /**
+     * Computes a human-readable display name for a media file.
+     *
+     * Strategy:
+     *  1. Strip extension from DISPLAY_NAME.
+     *  2. If the result is a pure numeric string (timestamp / random ID),
+     *     prefer the embedded TITLE metadata if it's different and non-blank.
+     *  3. Fall back to raw DISPLAY_NAME only as a last resort.
+     */
+    private fun computeDisplayName(rawDisplayName: String?, title: String?): String {
+        val nameNoExt = rawDisplayName
+            ?.substringBeforeLast('.')
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: ""
+
+        val isPureNumeric = nameNoExt.isNotEmpty() && nameNoExt.all { it.isDigit() }
+        val looksLikeId   = nameNoExt.length > 10 && isPureNumeric
+
+        val cleanTitle = title?.trim()?.takeIf { it.isNotBlank() && it != nameNoExt }
+
+        return when {
+            looksLikeId  && cleanTitle != null -> cleanTitle
+            isPureNumeric && cleanTitle != null -> cleanTitle
+            nameNoExt.isNotBlank()              -> nameNoExt
+            cleanTitle != null                  -> cleanTitle
+            else                                -> rawDisplayName ?: "Video"
+        }
+    }
 }

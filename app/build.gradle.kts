@@ -18,7 +18,7 @@ plugins {
 val buildDate: String = SimpleDateFormat("yyyyMMdd").format(Date())
 val buildTime: String = SimpleDateFormat("HHmm").format(Date())
 val META_VERSION = 1   // always 1 — identifies RyouPlayer
-val versionMajor = 3   // major release (maps to "3" in v1.3.x)
+val versionMajor = 4   // major release (maps to "4" in v1.4.x)
 
 // BUILD_NUMBER from CI (GitHub Actions run_number).
 // This is the "patch / build" counter used in versionCode.
@@ -27,14 +27,11 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 
 // versionNameMinor — bump manually on every feature/fix release.
 // Rule: reset to 1 on versionMajor bump, then increment by 1 per release.
-// History (v1.3.x):
-//   001 = YouTube-style UI rombak, About screen, bottom nav, home feed, FolderScreen mandiri
-//   101 = Player UI YouTube-style (MoreVert, ModalBottomSheet panels, QueuePanel),
-//         Settings revamp (label Indonesia, ValueSetting), 10 bug fixes
-//   102 = Settings 4-dialog bug fix (Speed/DoubleTap/FontSize/Codec sekarang save),
-//         Auto-update: download APK + install otomatis, pull-to-refresh di Folder
-//         & FoldersBrowser, auto-refresh saat setting .nomedia/hidden diubah
-val versionNameMinor: Int = 102
+// History (v1.4.x):
+//   001 = Home UI revamp (YouTube-style TopBar, InProgressCard, folder avatar),
+//         Player pill controls (ControlPill groups, liquid-glass style),
+//         Settings navigable sub-pages, media name fix, minSdk → API 29
+val versionNameMinor: Int = 1
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066
@@ -76,7 +73,7 @@ android {
 
     defaultConfig {
         applicationId = "com.ryoustream.player"
-        minSdk = 31
+        minSdk = 29
         targetSdk = 35
         versionCode = calculatedVersionCode
         versionName = calculatedVersionName
