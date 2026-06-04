@@ -752,3 +752,186 @@ parameter). Tidak perlu SettingsViewModel terpisah per sub-page.
 BackHandler di Settings sub-page harus `enabled = currentPage != null`.
 Jika `currentPage == null`, Back diteruskan ke `onBack: () -> Unit` yang navigasi keluar settings.
 
+
+---
+
+## SECTION 19 — MINIMUM API 29 (Android 10) + ARM64-ONLY
+
+### Konteks
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| `minSdk` | 31 (Android 12) | **29 (Android 10)** |
+| `targetSdk` | 35 | 35 (tidak berubah) |
+| `compileSdk` | 35 | 35 (tidak berubah) |
+| ABI | arm64-v8a (sudah) | arm64-v8a ✓ (konfirmasi) |
+
+**Alasan turun ke API 29:**
+Android 10 (rillis 2019) masih dipakai oleh jutaan perangkat low-mid range.
+API 31 terlalu tinggi — memotong ~15–20% pangsa pasar Android aktif global.
+Android 10+ sudah mendukung semua fitur inti RyouPlayer (scoped storage, MPV, Compose).
+
+**ARM64-only sudah benar:** `jniLibs/` hanya berisi `arm64-v8a/` (MPV native libs).
+Tidak ada armeabi-v7a, x86, x86_64 — sudah tepat untuk modern device 64-bit.
+
+---
+
+### Audit API — Yang Sudah Aman (tidak perlu ubah)
+
+Semua penggunaan API tinggi sudah dilindungi `Build.VERSION.SDK_INT >= ...` check:
+
+| Fitur | API Yang Dipakai | Guard Saat Ini | Status |
+|---|---|---|---|
+| Dynamic Color (Material You) | API 31 (S) | `>= S` ✓ | Aman, degradasi graceful ke tema solid |
+| `registerReceiver` + flags | API 33 (TIRAMISU) | `>= TIRAMISU` ✓ | Aman |
+| `MANAGE_EXTERNAL_STORAGE` | API 30 (R) | `>= R` ✓ | Aman |
+| `READ_MEDIA_VIDEO` permission | API 33 (TIRAMISU) | `>= TIRAMISU` ✓ | Aman |
+| `MediaStore.VOLUME_EXTERNAL` | API 29 (Q) | `>= Q` ✓ | Aman — API 29 = target kita |
+| PiP `PictureInPictureParams` | API 26 (O) | `>= O` ✓ | Aman |
+| `ACTION_MANAGE_UNKNOWN_APP_SOURCES` | API 26 (O) | `>= O` ✓ | Aman |
+| `WindowCompat.setDecorFitsSystemWindows` | API 21 (compat) | — | Aman |
+| `WindowInsetsControllerCompat` | API 21 (compat) | — | Aman |
+| `enableEdgeToEdge()` | API 21 (compat) | — | Aman |
+
+---
+
+### Apa Yang Berubah Jika minSdk = 29
+
+#### Perlu Ditangani: Permission Flow Android 10
+
+Di API 29, storage permission masih menggunakan **`READ_EXTERNAL_STORAGE`** (bukan `READ_MEDIA_VIDEO` yang baru di API 33).
+`PermissionHelper.kt` sudah punya guard `>= TIRAMISU` — tapi perlu pastikan fallback ke `READ_EXTERNAL_STORAGE` valid untuk API 29–32.
+
+```kotlin
+// PermissionHelper — audit & pastikan lengkap untuk semua tier:
+fun requiredPermissions(): List<String> = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+        listOf(Manifest.permission.READ_MEDIA_VIDEO)         // API 33+ → READ_MEDIA_VIDEO
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
+        listOf(Manifest.permission.READ_EXTERNAL_STORAGE)    // API 30-32 → READ_EXTERNAL_STORAGE
+    else ->
+        listOf(Manifest.permission.READ_EXTERNAL_STORAGE)    // API 29 → READ_EXTERNAL_STORAGE
+}
+```
+
+#### Perlu Ditangani: WRITE_EXTERNAL_STORAGE
+
+`WRITE_EXTERNAL_STORAGE` di API 29 masih diperlukan untuk fitur download APK (DownloadManager ke public Downloads).
+Di API 29, `DownloadManager` ke `DIRECTORY_DOWNLOADS` **tidak butuh** WRITE permission di API 29+
+(sudah scoped storage). Cek AndroidManifest:
+
+```xml
+<!-- Tambah maxSdkVersion agar tidak muncul di API 29+ -->
+<uses-permission
+    android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="28" />
+```
+
+#### Perlu Ditangani: SplashScreen
+
+`androidx.core:core-splashscreen` bekerja di API 21+ via compat — **tidak ada masalah**.
+Tapi di API 29-30, splash tidak ada native splash system, digantikan compat library. Sudah OK.
+
+#### Tidak Ada Masalah: Compose & Material3
+
+Compose BOM `2024.12.01` menetapkan `minSdk = 21`. PullToRefreshBox, ModalBottomSheet,
+semua M3 components — kompatibel dengan API 29. ✓
+
+---
+
+### File Yang Diubah
+
+#### 1. `gradle/libs.versions.toml`
+```toml
+# Sebelum
+minSdk = "31"
+
+# Sesudah
+minSdk = "29"
+```
+
+#### 2. `app/build.gradle.kts`
+```kotlin
+defaultConfig {
+    // Sebelum
+    minSdk = 31
+    
+    // Sesudah
+    minSdk = 29
+}
+```
+
+#### 3. `app/src/main/AndroidManifest.xml`
+```xml
+<!-- Tambah — WRITE_EXTERNAL_STORAGE hanya untuk API 28 ke bawah -->
+<uses-permission
+    android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="28" />
+```
+
+#### 4. `util/PermissionHelper.kt` — audit fallback API 29
+Pastikan `requiredPermissions()` mengembalikan `READ_EXTERNAL_STORAGE` untuk API 29–32.
+Cek `hasStoragePermission()` cover tier API 29.
+
+#### 5. `presentation/permission/PermissionScreen.kt` — audit UI
+Pastikan teks dan flow permission screen benar untuk API 29 (tidak ada `MANAGE_ALL_FILES` di API 29).
+
+---
+
+### Konfirmasi ARM64-only
+
+`app/src/main/jniLibs/` sudah **hanya berisi `arm64-v8a/`**.
+`build.gradle.kts` sudah:
+```kotlin
+ndk {
+    abiFilters += listOf("arm64-v8a")  // ← sudah benar ✓
+}
+```
+
+**Tidak ada perubahan ABI yang diperlukan.**
+
+Keuntungan arm64-only:
+- APK lebih kecil (tidak perlu lib 32-bit)
+- Performa optimal di semua Android 10+ device (semua Android 10+ flagship & mid-range adalah arm64)
+- MPV native libs sudah dikompilasi untuk arm64 saja
+
+---
+
+### Testing Matrix (Target v1.4.0)
+
+| API Level | Android | Target | Priority |
+|---|---|---|---|
+| 29 | Android 10 | Minimum ← **baru** | Wajib test |
+| 30 | Android 11 | — | Test storage & permission |
+| 31–32 | Android 12–12L | — | Test Dynamic Color fallback |
+| 33 | Android 13 | — | Test `READ_MEDIA_VIDEO` |
+| 34–35 | Android 14–15 | Saat ini minimum | Sudah teruji |
+
+---
+
+### Risiko & Mitigasi
+
+| Risiko | Kemungkinan | Mitigasi |
+|---|---|---|
+| Storage permission tidak jalan di API 29 | Medium | Audit `PermissionHelper` + test device API 29 |
+| MPV crash di old kernel API 29 | Low | arm64-v8a libs sudah diuji untuk API 24+ |
+| Compose performance di weak API 29 devices | Low | arm64-only sudah filter device lama yang biasanya weak |
+| DownloadManager path issue API 29 | Low | Sudah pakai `DIRECTORY_DOWNLOADS` public (API 29+) |
+| Cast SDK tidak jalan API 29 | Very Low | Google Cast 21.5.0 requires API 21+ ✓ |
+
+---
+
+### Urutan di Pass Implementasi
+
+Tambahkan setelah Pass 1 (Bug Fix):
+
+```
+Pass 1b — API 29 + ARM64
+  [P1b-A] libs.versions.toml: minSdk "31" → "29"
+  [P1b-B] app/build.gradle.kts: minSdk 31 → 29
+  [P1b-C] AndroidManifest.xml: tambah WRITE_EXTERNAL_STORAGE maxSdkVersion=28
+  [P1b-D] PermissionHelper.kt: audit & fix requiredPermissions() untuk API 29-32
+  [P1b-E] PermissionScreen.kt: audit teks & flow untuk API 29
+  [P1b-F] Build & verify tidak ada @RequiresApi yang unguarded di minSdk 29 context
+```
+
