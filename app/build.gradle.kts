@@ -31,7 +31,10 @@ val commitHash: String = (System.getenv("COMMIT_HASH") ?: "local").take(7)
 //   001 = Home UI revamp (YouTube-style TopBar, InProgressCard, folder avatar),
 //         Player pill controls (ControlPill groups, liquid-glass style),
 //         Settings navigable sub-pages, media name fix, minSdk → API 29
-val versionNameMinor: Int = 1
+//   002 = Player controls revamp: hapus pill kiri/kanan, semua opsi
+//         dikelompokkan di PlayerSettingsSheet (gear icon). Fix header
+//         tab beranda/folder/pustaka, hapus tab Anda + avatar duplikat.
+val versionNameMinor: Int = 2
 
 // versionCode format: META×1_000_000 + MAJOR×10_000 + BUILD
 // Encoding: 01_02_0066 → 1*1_000_000 + 2*10_000 + 66 = 1_020_066

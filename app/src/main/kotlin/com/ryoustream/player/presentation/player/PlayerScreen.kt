@@ -347,6 +347,7 @@ fun PlayerScreen(
 // Controls Overlay
 // ─────────────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlayerControls(
     state:          PlayerUiState,
@@ -354,28 +355,29 @@ private fun PlayerControls(
     viewModel:      PlayerViewModel,
     onSubtitlePick: () -> Unit,
 ) {
-    val pb                  = state.playbackState
-    var showMoreMenu        by remember { mutableStateOf(false) }
+    val pb                 = state.playbackState
+    var showMoreMenu       by remember { mutableStateOf(false) }
+    var showSettingsSheet  by remember { mutableStateOf(false) }
+    var showSpeedMenu      by remember { mutableStateOf(false) }
     var showOrientationMenu by remember { mutableStateOf(false) }
-    var showRatioMenu       by remember { mutableStateOf(false) }
-    var showSpeedMenu       by remember { mutableStateOf(false) }
+    var showRatioMenu      by remember { mutableStateOf(false) }
     val speeds = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 3f)
 
     Box(Modifier.fillMaxSize()) {
-        // Gradient — top (soft, YouTube 2025 style)
+        // Gradient — top
         Box(
             Modifier.fillMaxWidth().height(120.dp).align(Alignment.TopCenter)
                 .background(Brush.verticalGradient(
                     listOf(Color.Black.copy(0.65f), Color.Transparent)))
         )
-        // Gradient — bottom (soft, sufficient for readability)
+        // Gradient — bottom
         Box(
-            Modifier.fillMaxWidth().height(220.dp).align(Alignment.BottomCenter)
+            Modifier.fillMaxWidth().height(200.dp).align(Alignment.BottomCenter)
                 .background(Brush.verticalGradient(
                     listOf(Color.Transparent, Color.Black.copy(0.75f))))
         )
 
-        // ── Top bar (minimalis — Back · Title · PiP · MoreVert) ─────────────
+        // ── Top bar ──────────────────────────────────────────────────────────
         Row(
             Modifier.fillMaxWidth().align(Alignment.TopCenter)
                 .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -392,7 +394,7 @@ private fun PlayerControls(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            // PiP button — only on Android O+ (API 26)
+            // PiP
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val pipActivity = LocalContext.current as? Activity
                 IconButton(onClick = {
@@ -407,16 +409,12 @@ private fun PlayerControls(
                     Icon(Icons.Default.PictureInPictureAlt, "PiP", tint = Color.White)
                 }
             }
-            // MoreVert menu
+            // MoreVert
             Box {
                 IconButton(onClick = { showMoreMenu = true }) {
                     Icon(Icons.Default.MoreVert, "More", tint = Color.White)
                 }
-                DropdownMenu(
-                    expanded = showMoreMenu,
-                    onDismissRequest = { showMoreMenu = false },
-                ) {
-                    // Lock controls
+                DropdownMenu(showMoreMenu, { showMoreMenu = false }) {
                     DropdownMenuItem(
                         text = { Text(if (state.isLocked) "Unlock Controls" else "Lock Controls") },
                         leadingIcon = {
@@ -427,7 +425,6 @@ private fun PlayerControls(
                         },
                         onClick = { viewModel.toggleLock(); showMoreMenu = false },
                     )
-                    // Video Info
                     DropdownMenuItem(
                         text = { Text("Video Info") },
                         leadingIcon = { Icon(Icons.Default.Info, null, Modifier.size(18.dp)) },
@@ -437,13 +434,12 @@ private fun PlayerControls(
             }
         }
 
-        // ── Center transport (Section 4: bigger buttons) ─────────────────────
+        // ── Center transport ─────────────────────────────────────────────────
         Row(
             Modifier.align(Alignment.Center),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment     = Alignment.CenterVertically,
         ) {
-            // SkipPrev — 32dp icon, 48dp touch
             IconButton(
                 onClick  = viewModel::playPrev,
                 enabled  = state.hasPrev,
@@ -453,12 +449,10 @@ private fun PlayerControls(
                     tint = if (state.hasPrev) Color.White else Color.White.copy(0.5f),
                     modifier = Modifier.size(32.dp))
             }
-            // Replay10 — 42dp icon, 56dp touch
             IconButton(onClick = { viewModel.seekBackward(10) }, Modifier.size(56.dp)) {
                 Icon(Icons.Default.Replay10, "−10s",
                     tint = Color.White, modifier = Modifier.size(42.dp))
             }
-            // Play/Pause — 48dp icon, 72dp FAB
             FloatingActionButton(
                 onClick        = viewModel::playPause,
                 modifier       = Modifier.size(72.dp),
@@ -476,12 +470,10 @@ private fun PlayerControls(
                     )
                 }
             }
-            // Forward10 — 42dp icon, 56dp touch
             IconButton(onClick = { viewModel.seekForward(10) }, Modifier.size(56.dp)) {
                 Icon(Icons.Default.Forward10, "+10s",
                     tint = Color.White, modifier = Modifier.size(42.dp))
             }
-            // SkipNext — 32dp icon, 48dp touch
             IconButton(
                 onClick  = viewModel::playNext,
                 enabled  = state.hasNext,
@@ -493,13 +485,12 @@ private fun PlayerControls(
             }
         }
 
-        // ── Bottom section: Seeker + Action Rows ─────────────────────────────
+        // ── Bottom section ───────────────────────────────────────────────────
         Column(
             Modifier.fillMaxWidth().align(Alignment.BottomCenter)
                 .padding(horizontal = 12.dp).padding(bottom = 8.dp),
         ) {
-            // ── Seeker YouTube style (Section 5) ─────────────────────────────
-            // Chapter tick marks overlay
+            // Chapter ticks
             if (state.chapterMarks.isNotEmpty() && pb.duration > 0) {
                 Box(Modifier.fillMaxWidth().height(8.dp)) {
                     state.chapterMarks.forEach { (timeMs, _) ->
@@ -509,13 +500,13 @@ private fun PlayerControls(
                                 .fillMaxHeight()
                                 .width(2.dp)
                                 .align(Alignment.CenterStart)
-                                .offset(x = (fraction * 1f).dp) // approximate, layout will vary
+                                .offset(x = (fraction * 1f).dp)
                                 .background(Color.White.copy(0.7f), RoundedCornerShape(1.dp))
                         )
                     }
                 }
             }
-            // Slider — trackHeight 4dp, thumb 16dp
+            // Seeker
             Slider(
                 value         = pb.progress,
                 onValueChange = { viewModel.seekTo((it * pb.duration).toLong()) },
@@ -526,11 +517,7 @@ private fun PlayerControls(
                     inactiveTrackColor = Color.White.copy(0.3f),
                 ),
                 thumb = {
-                    Box(
-                        Modifier
-                            .size(16.dp)
-                            .background(Color.White, CircleShape)
-                    )
+                    Box(Modifier.size(16.dp).background(Color.White, CircleShape))
                 },
                 track = { sliderState ->
                     SliderDefaults.Track(
@@ -541,14 +528,13 @@ private fun PlayerControls(
                     )
                 },
             )
-            // Timestamps: current (left) · sisa waktu negatif (right) — B8
+            // Timestamps
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
                 Text(
                     DomainMediaItem.formatDuration(pb.currentPosition),
                     color = Color.White, style = MaterialTheme.typography.labelMedium,
                 )
                 Spacer(Modifier.weight(1f))
-                // B8: tampilkan sisa waktu dengan tanda minus (YouTube style)
                 val remaining = pb.duration - pb.currentPosition
                 Text(
                     if (pb.duration > 0) "-${DomainMediaItem.formatDuration(remaining)}"
@@ -557,139 +543,266 @@ private fun PlayerControls(
                 )
             }
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
 
-            // ── Pill Controls Row ──────────────────────────────────────────
-            // Pill kiri: Lock · Repeat · AutoNext · Speed
-            // Pill kanan: Subtitle · Audio · Info · Queue
+            // ── Bottom action row: Lock (kiri) · Settings (kanan) ────────────
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically,
             ) {
-                // ── PILL KIRI: Playback controls ──────────────────────────
-                ControlPill {
-                    PillIconButton(
-                        icon   = if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                        onClick = viewModel::toggleLock,
-                        active  = state.isLocked,
-                    )
-                    PillDivider()
-                    PillIconButton(
-                        icon   = when (pb.repeatMode) {
-                            RepeatMode.ONE -> Icons.Default.RepeatOne
-                            else           -> Icons.Default.Repeat
-                        },
-                        onClick = viewModel::toggleRepeatMode,
-                        active  = pb.repeatMode != RepeatMode.NONE,
-                    )
-                    PillIconButton(
-                        icon   = Icons.Default.SkipNext,
-                        onClick = viewModel::toggleAutoNext,
-                        active  = state.autoNext,
-                    )
-                    PillDivider()
-                    // Speed — teks bukan icon
-                    Box {
-                        PillTextButton(
-                            text    = "${pb.playbackSpeed}×",
-                            onClick = { showSpeedMenu = true },
-                        )
-                        DropdownMenu(showSpeedMenu, { showSpeedMenu = false }) {
-                            speeds.forEach { spd ->
-                                DropdownMenuItem(
-                                    text = { Text("${spd}×") },
-                                    leadingIcon = {
-                                        if (pb.playbackSpeed == spd)
-                                            Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                                    },
-                                    onClick = { viewModel.setPlaybackSpeed(spd); showSpeedMenu = false },
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // ── PILL KANAN: Media controls ────────────────────────────
-                ControlPill {
-                    PillIconButton(
-                        icon   = Icons.Default.Subtitles,
-                        onClick = viewModel::showSubtitlePanel,
-                        active  = state.subtitleEnabled,
-                    )
-                    PillIconButton(
-                        icon   = Icons.Default.Audiotrack,
-                        onClick = viewModel::showAudioPanel,
-                    )
-                    PillIconButton(
-                        icon   = Icons.Default.Info,
-                        onClick = viewModel::toggleVideoInfo,
-                    )
-                    PillDivider()
-                    PillIconButton(
-                        icon   = Icons.Default.QueueMusic,
-                        onClick = viewModel::showQueuePanel,
+                // Lock button
+                IconButton(onClick = viewModel::toggleLock) {
+                    Icon(
+                        if (state.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                        contentDescription = "Lock",
+                        tint = if (state.isLocked) MaterialTheme.colorScheme.primary
+                               else Color.White.copy(0.75f),
+                        modifier = Modifier.size(22.dp),
                     )
                 }
-            }
-
-            Spacer(Modifier.height(4.dp))
-
-            // ── Orientation + Aspect Ratio row ────────────────────────────
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically,
-            ) {
-                // Kiri: Orientation
-                Box {
-                    SmallIconButton(
-                        icon  = Icons.Default.ScreenRotation,
-                        label = state.orientationMode.shortLabel,
-                        onClick = { showOrientationMenu = true },
+                // Settings gear → buka bottom sheet
+                IconButton(onClick = { showSettingsSheet = true }) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "Pengaturan Player",
+                        tint = Color.White.copy(0.85f),
+                        modifier = Modifier.size(22.dp),
                     )
-                    DropdownMenu(showOrientationMenu, { showOrientationMenu = false }) {
-                        OrientationMode.entries.forEach { mode ->
-                            DropdownMenuItem(
-                                text = { Text(mode.label) },
-                                leadingIcon = {
-                                    if (state.orientationMode == mode)
-                                        Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                                },
-                                onClick = { viewModel.setOrientationMode(mode); showOrientationMenu = false },
-                            )
-                        }
-                    }
-                }
-                // Kanan: Aspect Ratio
-                Box {
-                    SmallIconButton(
-                        icon  = Icons.Default.AspectRatio,
-                        label = state.aspectRatioMode.label,
-                        onClick = { showRatioMenu = true },
-                    )
-                    DropdownMenu(showRatioMenu, { showRatioMenu = false }) {
-                        AspectRatioMode.entries.forEach { mode ->
-                            DropdownMenuItem(
-                                text = { Text(mode.label) },
-                                leadingIcon = {
-                                    if (state.aspectRatioMode == mode)
-                                        Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                                },
-                                onClick = {
-                                    if (state.aspectRatioMode != mode) viewModel.cycleAspectRatio()
-                                    showRatioMenu = false
-                                },
-                            )
-                        }
-                    }
                 }
             }
         }
     }
+
+    // ── Player Settings Sheet ────────────────────────────────────────────────
+    if (showSettingsSheet) {
+        PlayerSettingsSheet(
+            state            = state,
+            viewModel        = viewModel,
+            onSubtitlePick   = onSubtitlePick,
+            onDismiss        = { showSettingsSheet = false },
+            showSpeedMenu    = showSpeedMenu,
+            onShowSpeedMenu  = { showSpeedMenu = it },
+            showOrientationMenu = showOrientationMenu,
+            onShowOrientationMenu = { showOrientationMenu = it },
+            showRatioMenu    = showRatioMenu,
+            onShowRatioMenu  = { showRatioMenu = it },
+            speeds           = speeds,
+        )
+    }
+
+    // ── Lock overlay ─────────────────────────────────────────────────────────
+    if (state.isLocked) {
+        Box(
+            Modifier.fillMaxSize().clickable(onClick = viewModel::toggleLock),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Default.Lock, "Unlock", tint = Color.White)
+        }
+    }
+    if (state.showVideoInfo) {
+        VideoInfoSheet(state = state, onDismiss = viewModel::toggleVideoInfo)
+    }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Player Settings Sheet ─────────────────────────────────────────────────────
+// Semua kontrol detail dikelompokkan di sini — bersih seperti YouTube
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerSettingsSheet(
+    state:                PlayerUiState,
+    viewModel:            PlayerViewModel,
+    onSubtitlePick:       () -> Unit,
+    onDismiss:            () -> Unit,
+    showSpeedMenu:        Boolean,
+    onShowSpeedMenu:      (Boolean) -> Unit,
+    showOrientationMenu:  Boolean,
+    onShowOrientationMenu:(Boolean) -> Unit,
+    showRatioMenu:        Boolean,
+    onShowRatioMenu:      (Boolean) -> Unit,
+    speeds:               List<Float>,
+) {
+    val pb = state.playbackState
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                "Pengaturan Player",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+
+            // ── Speed ──────────────────────────────────────────────────────
+            Box {
+                ListItem(
+                    headlineContent   = { Text("Kecepatan") },
+                    supportingContent = { Text("${pb.playbackSpeed}×") },
+                    leadingContent    = { Icon(Icons.Default.Speed, null) },
+                    trailingContent   = { Icon(Icons.Default.ChevronRight, null) },
+                    modifier = Modifier.clickable { onShowSpeedMenu(true) }.clip(RoundedCornerShape(12.dp)),
+                )
+                DropdownMenu(showSpeedMenu, { onShowSpeedMenu(false) }) {
+                    speeds.forEach { spd ->
+                        DropdownMenuItem(
+                            text = { Text("${spd}×") },
+                            leadingIcon = {
+                                if (pb.playbackSpeed == spd)
+                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                            },
+                            onClick = { viewModel.setPlaybackSpeed(spd); onShowSpeedMenu(false) },
+                        )
+                    }
+                }
+            }
+
+            // ── Repeat ─────────────────────────────────────────────────────
+            ListItem(
+                headlineContent = { Text("Ulangi") },
+                supportingContent = {
+                    Text(when (pb.repeatMode) {
+                        RepeatMode.NONE -> "Tidak diulang"
+                        RepeatMode.ONE  -> "Ulangi 1"
+                        else            -> "Ulangi semua"
+                    })
+                },
+                leadingContent = {
+                    Icon(
+                        when (pb.repeatMode) {
+                            RepeatMode.ONE -> Icons.Default.RepeatOne
+                            else           -> Icons.Default.Repeat
+                        },
+                        null,
+                        tint = if (pb.repeatMode != RepeatMode.NONE)
+                                   MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                modifier = Modifier.clickable { viewModel.toggleRepeatMode() }.clip(RoundedCornerShape(12.dp)),
+            )
+
+            // ── Auto Next ──────────────────────────────────────────────────
+            ListItem(
+                headlineContent = { Text("Putar Berikutnya Otomatis") },
+                leadingContent  = { Icon(Icons.Default.SkipNext, null,
+                    tint = if (state.autoNext) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant) },
+                trailingContent = {
+                    Switch(checked = state.autoNext, onCheckedChange = { viewModel.toggleAutoNext() })
+                },
+                modifier = Modifier.clip(RoundedCornerShape(12.dp)),
+            )
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            // ── Subtitle ───────────────────────────────────────────────────
+            ListItem(
+                headlineContent = { Text("Subtitle") },
+                leadingContent  = { Icon(Icons.Default.Subtitles, null,
+                    tint = if (state.subtitleEnabled) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant) },
+                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                modifier = Modifier.clickable {
+                    viewModel.showSubtitlePanel(); onDismiss()
+                }.clip(RoundedCornerShape(12.dp)),
+            )
+
+            // ── Audio ──────────────────────────────────────────────────────
+            ListItem(
+                headlineContent = { Text("Trek Audio") },
+                leadingContent  = { Icon(Icons.Default.Audiotrack, null) },
+                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                modifier = Modifier.clickable {
+                    viewModel.showAudioPanel(); onDismiss()
+                }.clip(RoundedCornerShape(12.dp)),
+            )
+
+            // ── Queue ──────────────────────────────────────────────────────
+            ListItem(
+                headlineContent = { Text("Antrian") },
+                leadingContent  = { Icon(Icons.Default.QueueMusic, null) },
+                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                modifier = Modifier.clickable {
+                    viewModel.showQueuePanel(); onDismiss()
+                }.clip(RoundedCornerShape(12.dp)),
+            )
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            // ── Orientation ────────────────────────────────────────────────
+            Box {
+                ListItem(
+                    headlineContent   = { Text("Rotasi Layar") },
+                    supportingContent = { Text(state.orientationMode.label) },
+                    leadingContent    = { Icon(Icons.Default.ScreenRotation, null) },
+                    trailingContent   = { Icon(Icons.Default.ChevronRight, null) },
+                    modifier = Modifier.clickable { onShowOrientationMenu(true) }.clip(RoundedCornerShape(12.dp)),
+                )
+                DropdownMenu(showOrientationMenu, { onShowOrientationMenu(false) }) {
+                    OrientationMode.entries.forEach { mode ->
+                        DropdownMenuItem(
+                            text = { Text(mode.label) },
+                            leadingIcon = {
+                                if (state.orientationMode == mode)
+                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                            },
+                            onClick = { viewModel.setOrientationMode(mode); onShowOrientationMenu(false) },
+                        )
+                    }
+                }
+            }
+
+            // ── Aspect Ratio ───────────────────────────────────────────────
+            Box {
+                ListItem(
+                    headlineContent   = { Text("Rasio Layar") },
+                    supportingContent = { Text(state.aspectRatioMode.label) },
+                    leadingContent    = { Icon(Icons.Default.AspectRatio, null) },
+                    trailingContent   = { Icon(Icons.Default.ChevronRight, null) },
+                    modifier = Modifier.clickable { onShowRatioMenu(true) }.clip(RoundedCornerShape(12.dp)),
+                )
+                DropdownMenu(showRatioMenu, { onShowRatioMenu(false) }) {
+                    AspectRatioMode.entries.forEach { mode ->
+                        DropdownMenuItem(
+                            text = { Text(mode.label) },
+                            leadingIcon = {
+                                if (state.aspectRatioMode == mode)
+                                    Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                            },
+                            onClick = {
+                                if (state.aspectRatioMode != mode) viewModel.cycleAspectRatio()
+                                onShowRatioMenu(false)
+                            },
+                        )
+                    }
+                }
+            }
+
+            // ── Video Info ─────────────────────────────────────────────────
+            ListItem(
+                headlineContent = { Text("Info Video") },
+                leadingContent  = { Icon(Icons.Default.Info, null) },
+                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                modifier = Modifier.clickable {
+                    viewModel.toggleVideoInfo(); onDismiss()
+                }.clip(RoundedCornerShape(12.dp)),
+            )
+        }
+    }
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Subtitle Panel → ModalBottomSheet (Section 8)
 // ─────────────────────────────────────────────────────────────────────────────
 
